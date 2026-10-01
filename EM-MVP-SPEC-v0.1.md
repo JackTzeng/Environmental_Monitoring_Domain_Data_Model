@@ -214,3 +214,22 @@ XLSX 適合多分頁，優先於逐頁 CSV。CSV 若使用必須按 CSV 引號�
 
 Microsoft VBA： https://learn.microsoft.com/en-us/office/vba/library-reference/concepts/getting-started-with-vba-in-office
 Google VBA 轉 Apps Script： https://developers.google.com/apps-script/guides/macro-converter/convert-files
+
+## 13. 使用者指定的最低可接受輸出基準
+
+參考資料夾：D:\USB 磁碟機\Jack\0_QA工作\統計分析-clude\20260720 微生物趨勢\製測 CRR。
+
+已確認有一／三廠 CRR HTML＋XLSX，以及一／三廠月度採樣 HTML，共六檔。本次讀取一廠两個 HTML 的內容與定義，未進行 Excel 執行／視覺驗證。此資料是最低可接受參考，不視為所有規則已核准。
+
+保留兩個主要報表：
+
+1. 人員 CRR：人員列、月份欄，每月 A／B／CRR，期間合計與月度摘要。A 是陽性的人日數；B 是有效監測人日數。落菌與接觸法合併，同人同日計一次；任一 Grade A 點位 CFU>0 則人日陽性。廠別是分組鍵的一部分，不跨廠合併。期間 CRR 用總 A／總 B，不平均各月百分比。
+2. 點位採樣矩陣：方法／點位列、月份欄，每月「菌落數加總＋採樣筆數」，方法小計與期間合計。Isolator 獨立方法群組，陽性標黃；無採樣顯示 —，有採樣未檢出顯示 0。
+
+一廠參考快照：人員 CRR B合計3、A合計0；點位矩陣135筆、4 CFU，含 Isolator。這是舊輸出的核對錨點，不代表來源資料已重新驗證。
+
+重要更新：第 12 節的一份 Word＝原始事件，應與本報表的人日分母分開。資料庫保留 report_event_id；製程人員報表另產生 person_day_key＝廠別＋日期＋操作者，合併來源事件與落菌／接觸方法。禁止把原始報告數直接當成本參考報表的 B，也不得借用此人日規則刪除點位採樣明細。
+
+Isolator 可進點位表；缺操作者不得推入人員 CRR。缺姓名紀錄進待核對列表；現有 NA 排除僅沿用已確認非監測事實。以用途／納入規則決定有效分母，不單憑缺姓名刪除。
+
+VBA 首版優先重現這兩張矩陣。新增來源追溯、匯入錯誤列表、人工修正歷程及原生動態圖表。圖表必須讀目前矩陣／公式資料，不能使用靜態圖片或一次性快照。整體 Dashboard、UCL／EW-1 等進階趨勢排在輸入與兩張矩陣核對之後。
