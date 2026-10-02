@@ -1,0 +1,78 @@
+{% extends 'base.html' %}{% block body %}
+{% if view == 'month' %}
+<h1>{{year}} 年 {{'%02d'|format(month)}} 月採樣明細</h1>
+<p class="muted">{{point_label}} · 共 {{rows|length}} 筆。依採樣日期列出當月全部資料；點紀錄可查看原始辨認值、人工修正與歷程。</p>
+<p><a class="button secondary" href="{{url_for('database', view='matrix', year=year, state=state)}}">返回逐月矩陣</a></p>
+<div class="panel scroll"><table><thead><tr><th>採樣日期</th><th>目前結果</th><th>原始辨認值</th><th>Grade</th><th>Alarm Lv 原文</th><th>Action Lv 原文</th><th>核對狀態</th><th>資料狀態</th><th>來源</th><th>提醒</th></tr></thead><tbody>
+{% for r in rows %}<tr>
+  <td>{{r.current.sample_date}}</td>
+  <td>{{r.current.result_raw or r.current.cfu_count or '缺值'}} <span class="tag">{{r.current.result_type}}</span></td>
+  <td>{{r.original.result_raw or r.original.cfu_count or '缺值'}}</td>
+  <td>{{r.current.grade or '未填'}}</td><td>{{r.current.alert_raw or '未填'}}</td><td>{{r.current.action_raw or '未填'}}</td>
+  <td>{% if r.verified %}{% for field,status in r.verified.items() %}{{labels[field]}}：{{'已核對' if status=='checked' else '不適用'}}{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}待核對{% endif %}</td>
+  <td>{{{'draft':'待核對','confirmed':'已確認','void':'作廢'}[r.state]}}</td>
+  <td>{% if r.source_id %}<a href="{{url_for('source', source_id=r.source_id)}}">{{r.source_name}}</a><br>{% endif %}<span class="original">{{r.source_location}}</span></td>
+  <td><a href="{{url_for('edit', record_id=r.id)}}">#{{r.id}} 檢視／修正</a><br>{{r.warnings|join('；')}}</td>
+</tr>{% else %}<tr><td colspan="10">此點位本月沒有符合目前篩選條件的資料。</td></tr>{% endfor %}
+</tbody></table></div>
+
+{% elif view == 'detail' %}
+<h1>原始明細</h1>
+<div class="controls"><form method="get"><input type="hidden" name="view" value="detail"><label for="state">狀態</label><select name="state" id="state"><option value="">全部非作廢</option>{% for s,l in [('draft','待核對'),('confirmed','已確認'),('void','作廢')] %}<option value="{{s}}" {% if state==s %}selected{% endif %}>{{l}}</option>{% endfor %}</select> <button>篩選</button></form>
+<a class="button secondary" href="{{url_for('records_csv')}}">匯出明細 CSV</a><a class="button" href="{{url_for('database')}}">逐月矩陣</a></div>
+<p class="muted">{{total}} 筆 · 第 {{page}} 頁（每頁最多 100 筆）。</p>
+<div class="panel scroll"><table><thead><tr><th>紀錄</th><th>狀態</th><th>日期／廠別</th><th>類型／方法／房間／Grade／點位／單位</th><th>目前結果</th><th>原始辨認值</th><th>來源</th><th>提醒</th></tr></thead><tbody>
+{% for r in rows %}<tr>
+  <td><a href="{{url_for('edit',record_id=r.id)}}">#{{r.id}} 檢視／修正</a></td>
+  <td>{{{'draft':'待核對','confirmed':'已確認','void':'作廢'}[r.state]}}</td>
+  <td>{{r.current.sample_date or '未讀出'}}<br>{{r.current.site}}</td>
+  <td>{{r.current.monitoring_type}}<br>{{r.current.method}}<br>{{r.current.room}}／{{r.current.grade}}／{{r.current.point_id}}／{{r.current.unit}}</td>
+  <td>{{r.current.result_raw or r.current.cfu_count or '缺值'}} <span class="tag">{{r.current.result_type}}</span></td>
+  <td>{{r.original.result_raw or r.original.cfu_count or '缺值'}}</td>
+  <td>{% if r.source_id %}<a href="{{url_for('source',source_id=r.source_id)}}">{{r.source_name}}</a><br>{% else %}人工新增<br>{% endif %}<span class="original">{{r.source_location}}</span></td>
+  <td>{{r.warnings|join('；')}}</td>
+</tr>{% else %}<tr><td colspan="8">尚無資料。從「輸入」選取來源檔案。</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="controls">{% if page>1 %}<a href="{{url_for('database',view='detail',page=page-1,state=state)}}">上一頁</a>{% endif %}{% if page*100<total %}<a href="{{url_for('database',view='detail',page=page+1,state=state)}}">下一頁</a>{% endif %}</div>
+
+{% else %}
+<h1>資料庫逐月點位矩陣</h1>
+<p class="muted">依廠別、監測類型、方法、房間、Grade、點位及單位分組。每月只顯示該月最早採樣日的目前結果，不加總；月格可開啟當月全部採樣與來源。預設含待核對資料，狀態會標示；作廢資料預設排除。正式月報仍只採用已確認紀錄。</p>
+<form method="get" action="{{url_for('database')}}" class="controls">
+  <input type="hidden" name="view" value="matrix">
+  <label>年度<select name="year">{% if year not in years %}<option selected value="{{year}}">{{year}}</option>{% endif %}{% for y in years %}<option value="{{y}}" {% if year==y %}selected{% endif %}>{{y}}</option>{% endfor %}</select></label>
+  <label>廠別<select name="site"><option value="">全部</option>{% for value in sites %}<option value="{{value}}" {% if site==value %}selected{% endif %}>{{value}}</option>{% endfor %}</select></label>
+  <label>監測類型<select name="monitoring_type"><option value="">全部</option>{% for value in monitoring_types %}<option value="{{value}}" {% if monitoring_type==value %}selected{% endif %}>{{value}}</option>{% endfor %}</select></label>
+  <label>方法<select name="method"><option value="">全部</option>{% for value in methods %}<option value="{{value}}" {% if method==value %}selected{% endif %}>{{value}}</option>{% endfor %}</select></label>
+  <label>核對狀態<select name="state"><option value="" {% if not state %}selected{% endif %}>全部非作廢</option><option value="draft" {% if state=='draft' %}selected{% endif %}>待核對</option><option value="confirmed" {% if state=='confirmed' %}selected{% endif %}>已確認</option><option value="void" {% if state=='void' %}selected{% endif %}>作廢</option></select></label>
+  <button>更新矩陣</button>
+  <a class="button secondary" href="{{url_for('database',view='detail',state=state)}}">原始明細</a>
+  <a class="button secondary" href="{{url_for('records_csv')}}">匯出 CSV</a>
+</form>
+<p class="muted">{{year}} 年符合條件的明細 {{total}} 筆；矩陣 {{matrix|length}} 組。趨勢圖僅連接最早日可計數的 CFU；特殊值、無採樣與最早日衝突不畫成數值。{% if undated_count %}另有 {{undated_count}} 筆日期空缺或格式錯誤，無法放入月份。{% endif %}</p>
+<div class="panel scroll"><table class="matrix-table"><thead><tr><th>房間－點位</th><th>Grade</th><th>Alarm Lv 原文</th><th>Action Lv 原文</th>{% for month in range(1,13) %}<th>{{'%02d'|format(month)}}月</th>{% endfor %}<th>點位趨勢圖</th></tr></thead><tbody>
+{% set ns=namespace(group='',room='') %}
+{% for row in matrix %}
+  {% set group=row.site ~ '｜' ~ row.monitoring_type ~ '｜' ~ row.method %}
+  {% if group != ns.group %}<tr class="matrix-group"><th colspan="17">{{row.site or '廠別未填'}}　/　{{row.monitoring_type or '類型未填'}}　/　{{row.method or '方法未填'}}</th></tr>{% set ns.group=group %}{% set ns.room='' %}{% endif %}
+  {% if row.room != ns.room %}<tr class="matrix-room"><th colspan="17">房間：{{row.room or '未讀取'}}</th></tr>{% set ns.room=row.room %}{% endif %}
+  <tr>
+    <th>{% if row.room %}{{row.room}}{% else %}<span class="tag">房間未讀</span>{% endif %}－{% if row.point_id %}{{row.point_id}}{% else %}<span class="tag">點位未拆分</span>{% endif %}</th>
+    <td>{{row.grade or '未填'}}</td>
+    <td>{% for value in row.alarm_values %}{{value}}{% if not loop.last %}<br>{% endif %}{% endfor %}{% if row.alarm_values|length>1 %}<br><span class="tag conflict-tag">來源限值有差異</span>{% endif %}</td>
+    <td>{% for value in row.action_values %}{{value}}{% if not loop.last %}<br>{% endif %}{% endfor %}{% if row.action_values|length>1 %}<br><span class="tag conflict-tag">來源限值有差異</span>{% endif %}</td>
+    {% for month in range(1,13) %}{% set cell=row.months[month] %}<td class="matrix-cell {% if cell.numeric is not none and cell.numeric>0 %}positive{% endif %} {% if cell.first_conflict %}matrix-conflict{% endif %}">
+      {% if cell.has_samples %}
+        <a class="matrix-value" href="{{url_for('database',view='month',year=year,month='%02d'|format(month),site=row.site,monitoring_type=row.monitoring_type,method=row.method,room=row.room,grade=row.grade,point_id=row.point_id,unit=row.unit,state=state)}}" title="{{cell.first_date}} 最早採樣日；共 {{cell.sample_count}} 筆明細">{{cell.display}}</a>
+        <span class="matrix-tags">共 {{cell.sample_count}} 筆</span>
+        {% if cell.first_day_count>1 %}<span class="matrix-tags">最早日 {{cell.first_day_count}} 筆</span>{% endif %}
+        {% if cell.pending %}<span class="tag">含待核對</span>{% endif %}
+        {% if cell.first_conflict %}<span class="tag conflict-tag">同日值／限值衝突</span>{% else %}{% for conflict_day in cell.conflict_dates %}<span class="tag conflict-tag">{{conflict_day}} 同日衝突</span>{% endfor %}{% endif %}
+      {% else %}<span aria-label="無採樣">—</span>{% endif %}
+    </td>{% endfor %}
+    <td>{{row.sparkline}}</td>
+  </tr>
+{% else %}<tr><td colspan="17">此年度尚無符合條件的資料。</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends 'base.html' %}{% block body %}
+<h1>輸入資料</h1>
+<div class="panel">
+  <h2>匯入整個資料夾</h2>
+  <p class="muted">輸入本機或有權限的 Windows 共用資料夾路徑，系統會遞迴讀取子資料夾並直接寫入目前資料庫。預設只讀取 .docx；可勾選一併讀取 .xlsx 與 UTF-8 .csv。每個檔案最多 25 MB，資料夾總量不受上傳頁 25 MB 限制。來源檔不會被修改。</p>
+  <form id="folder-import-form" method="post" action="{{url_for('import_folder')}}">
+    <input type="hidden" name="csrf" value="{{session.csrf}}">
+    <label for="folder_path">資料夾路徑</label>
+    <input id="folder_path" name="folder_path" type="text" maxlength="2048" placeholder="例如 C:\\EM reports 或 \\\\server\\share\\EM reports" required>
+    <label for="folder-site">廠別脈絡（僅在來源未標廠別時補用）</label>
+    <select id="folder-site" name="site_context"><option value="">不指定</option><option>一廠</option><option>三廠</option></select>
+    <label><input type="checkbox" name="include_sheets"> 一併讀取 XLSX／UTF-8 CSV 匯出檔</label>
+    <p><button id="folder-import-submit">匯入整個資料夾</button></p>
+  </form>
+  <div id="folder-import-error" class="notice" role="alert" hidden></div>
+  <section id="folder-import-progress" aria-live="polite" {% if not folder_job %}hidden{% endif %}>
+    <h3>資料夾匯入進度</h3>
+    <p id="folder-import-state"></p>
+    <progress id="folder-import-meter" max="1" value="0" style="width:100%"></progress>
+    <p id="folder-import-counts" class="muted"></p>
+    <p id="folder-import-current" class="muted"></p>
+    <p><a href="{{url_for('database')}}">查看資料庫</a></p>
+    <details id="folder-import-failures"><summary>失敗與原因</summary><ul id="folder-import-failure-list"></ul></details>
+  </section>
+</div>
+<div class="panel">
+  <h2>選取檔案</h2>
+  <p class="muted">也可沿用多檔上傳；此方式每次合計最多 25 MB。檔案只傳到本機程式。</p>
+  <form method="post" action="{{url_for('import_files')}}" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{session.csrf}}">
+    <label for="files">來源檔案</label><input id="files" name="files" type="file" multiple accept=".docx,.xlsx,.csv" required>
+    <label for="upload-site">廠別脈絡（僅在來源未標廠別時補用）</label>
+    <select id="upload-site" name="site_context"><option value="">不指定</option><option>一廠</option><option>三廠</option></select>
+    <p><button class="secondary">讀取所選檔案</button></p>
+  </form>
+  <p class="muted">未知版型會顯示錯誤；空白、TNTC、&lt;1 與 0 分開保留。相同內容重跑不會重複新增；不同檔案的同採樣候選仍需人工核對。</p>
+</div>
+<div class="panel">
+  <h2>人工新增</h2><p>無法讀取的報告可手動輸入。人工新增紀錄不算入解析器正確率。</p>
+  <form method="post" action="{{url_for('manual')}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">新增空白紀錄</button></form>
+</div>
+<p class="muted">目前 {{count}} 筆紀錄。資料庫及原檔副本存於 <code>{{data_dir}}</code>。每次寫入前會建立 SQLite 備份。</p>
+<h2>已匯入來源與重新解析</h2><p class="muted">重新解析會先備份；只更新未人工更改、未核對的草稿欄位，保留原始辨認值並記錄差異。已確認或人工修正資料不會被覆蓋。</p>
+<div class="panel scroll"><table><thead><tr><th>來源</th><th>明細</th><th>來源首次匯入解析版本</th><th>來源目前解析版本</th><th>廠別脈絡</th><th>操作</th></tr></thead><tbody>
+{% for source in sources %}<tr><td><a href="{{url_for('source',source_id=source.id)}}">{{source.name}}</a></td><td>{{source.record_count}}</td><td>{{source.parser_version}}</td><td>{{source.latest_parser_version or source.parser_version}}</td><td>{{source.context_site or '未指定'}}</td><td>{% if source.latest_parser_version != version %}<form method="post" action="{{url_for('reparse',source_id=source.id)}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">重新解析</button></form>{% else %}已是最新{% endif %}</td></tr>{% else %}<tr><td colspan="6">尚無匯入來源。</td></tr>{% endfor %}</tbody></table></div>
+<h2>最近匯入紀錄</h2><div class="panel scroll"><table><thead><tr><th>時間（UTC）</th><th>檔案</th><th>結果</th></tr></thead><tbody>{% for entry in imports %}<tr><td>{{entry.created_at}}</td><td>{{entry.filename}}</td><td>{{entry.detail}}</td></tr>{% else %}<tr><td colspan="3">尚無匯入。</td></tr>{% endfor %}</tbody></table></div>
+<script>
+(() => {
+  const form = document.getElementById('folder-import-form');
+  const submit = document.getElementById('folder-import-submit');
+  const errorBox = document.getElementById('folder-import-error');
+  const progressBox = document.getElementById('folder-import-progress');
+  const stateText = document.getElementById('folder-import-state');
+  const meter = document.getElementById('folder-import-meter');
+  const counts = document.getElementById('folder-import-counts');
+  const current = document.getElementById('folder-import-current');
+  const failureList = document.getElementById('folder-import-failure-list');
+  const failureDetails = document.getElementById('folder-import-failures');
+  const statusUrl = {{url_for('folder_import_progress', job_id='JOB_ID')|tojson}};
+  const initialJob = {{folder_job|tojson}};
+  let polling = false;
+
+  function showJob(job) {
+    progressBox.hidden = false;
+    const labels = {scanning: '掃描中', processing: '處理中', complete: '完成'};
+    if (job.phase === 'scanning') {
+      stateText.textContent = labels.scanning + '：已掃描 ' + job.scanned_directories + ' 個資料夾，找到 ' + job.candidate_count + ' 個可處理檔案。';
+      meter.removeAttribute('value');
+    } else {
+      const total = Math.max(job.candidate_count, 1);
+      meter.max = total;
+      meter.value = job.processed_count;
+      const result = job.failed_count ? '完成；有檔案需要處理' : '完成';
+      stateText.textContent = job.phase === 'complete' ? result : labels.processing + '：' + job.processed_count + ' / ' + job.candidate_count + ' 個檔案';
+    }
+    counts.textContent = '新增檔案 ' + job.new_files + ' · 新增明細 ' + job.new_records +
+      ' · 已存在檔案 ' + job.existing_files + ' · 失敗 ' + job.failed_count +
+      ' · 略過檔案 ' + job.skipped_files + ' · 略過連結資料夾 ' + job.skipped_directories;
+    current.textContent = job.current_file ? '目前檔案：' + job.current_file : '';
+    failureList.replaceChildren();
+    for (const failure of job.failures) {
+      const item = document.createElement('li');
+      item.textContent = String(failure.path) + '：' + String(failure.reason);
+      failureList.appendChild(item);
+    }
+    failureDetails.hidden = job.failures.length === 0;
+    submit.disabled = job.phase !== 'complete';
+  }
+
+  async function poll(jobId) {
+    if (polling) return;
+    polling = true;
+    progressBox.hidden = false;
+    try {
+      while (true) {
+        const response = await fetch(statusUrl.replace('JOB_ID', encodeURIComponent(jobId)), {headers: {Accept: 'application/json'}});
+        const job = await response.json();
+        if (!response.ok) throw new Error(job.error || '無法讀取匯入進度。');
+        showJob(job);
+        if (job.phase === 'complete') {
+          window.location.reload();
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 700));
+      }
+    } catch (error) {
+      errorBox.textContent = error.message;
+      errorBox.hidden = false;
+    } finally {
+      polling = false;
+      submit.disabled = false;
+    }
+  }
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    errorBox.hidden = true;
+    submit.disabled = true;
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST', body: new FormData(form),
+        headers: {'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json'}
+      });
+      const result = await response.json();
+      if (!response.ok && !result.job_id) throw new Error(result.error || '無法啟動資料夾匯入。');
+      if (!response.ok) {
+        errorBox.textContent = result.error;
+        errorBox.hidden = false;
+      }
+      await poll(result.job_id);
+    } catch (error) {
+      errorBox.textContent = error.message;
+      errorBox.hidden = false;
+      submit.disabled = false;
+    }
+  });
+
+  if (initialJob && initialJob.id && initialJob.phase !== 'complete') poll(initialJob.id);
+  else if (initialJob && initialJob.id) showJob(initialJob);
+})();
+</script>
+{% endblock %}

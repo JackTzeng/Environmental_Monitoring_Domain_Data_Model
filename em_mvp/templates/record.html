@@ -1,0 +1,19 @@
+{% extends 'base.html' %}{% block body %}<h1>紀錄 #{{record.id}} · 檢視與核對</h1>
+<p class="muted">{{record.source_name or '人工新增'}} · {{record.source_location}} · 這筆原始辨認值解析版本 {{record.original_parser_version or '—'}} · 來源首次匯入解析版本 {{record.source_initial_parser_version or '—'}} · 來源目前解析版本 {{record.latest_parser_version or record.source_initial_parser_version or '—'}} · 資料版本 {{record.version}}</p>
+{% if record.source_id %}<a href="{{url_for('source',source_id=record.source_id)}}">下載保留的來源檔</a><details><summary>來源 SHA-256／擷取原文</summary><code>{{record.sha256}}</code><pre>{{record.source_text}}</pre></details>{% endif %}
+{% if record.warnings %}<div class="notice">{{record.warnings|join('；')}}</div>{% endif %}
+{% if candidates %}<div class="notice">有可能重複的紀錄：{% for r in candidates %}<a href="{{url_for('edit',record_id=r.id)}}">#{{r.id}}</a> {% endfor %}。確認不同採樣才可一起納入。</div>{% endif %}
+<form method="post"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="record_version" value="{{record.version}}">
+<div class="panel scroll"><table><thead><tr><th>欄位</th><th>匯入時的辨認值（保留）</th><th>目前值／人工核對值</th><th>逐欄核對</th></tr></thead><tbody>
+{% for f in fields %}<tr><th><label for="{{f}}">{{labels[f]}}</label></th><td class="original">{{record.original.get(f,'') or '（空白）'}}</td><td>
+{% if f=='result_type' %}<select id="{{f}}" name="{{f}}">{% for v,l in [('','未設定'),('count','可計數'),('tntc','TNTC'),('less_than','小於值'),('not_applicable','不適用'),('missing','缺值'),('unknown','待判讀')] %}<option value="{{v}}" {% if record.current.get(f)==v %}selected{% endif %}>{{l}}</option>{% endfor %}</select>
+{% elif f=='monitoring_type' %}<select id="{{f}}" name="{{f}}">{% for v in ['','待分類','例行環測','製程監測','重測','污染後環測','無塵衣','無塵衣月監測','無塵衣季監測','其他'] %}<option {% if record.current.get(f)==v %}selected{% endif %}>{{v}}</option>{% endfor %}</select>
+{% else %}<input type="text" id="{{f}}" name="{{f}}" value="{{record.current.get(f,'')}}" {% if f=='sample_date' %}placeholder="YYYY-MM-DD"{% endif %}>{% endif %}</td><td>
+<select name="review_{{f}}" aria-label="{{labels[f]}} 核對狀態"><option value="">未核對</option><option value="checked" {% if record.verified.get(f)=='checked' %}selected{% endif %}>已依來源核對</option><option value="not_applicable" {% if record.verified.get(f)=='not_applicable' %}selected{% endif %}>此報告不適用</option></select></td></tr>{% endfor %}</tbody></table></div>
+<p class="muted">每欄正確率以原始辨認值對已核對值計算。請依來源逐欄確認；不適用欄位排除，未核對欄位不冒充正確。</p>
+<label><input type="checkbox" name="distinct_sample" value="yes"> 已核對重複候選；此筆為獨立採樣，或已將重複紀錄作廢。</label>
+{% if record.warnings %}<label><input type="checkbox" name="warnings_reviewed" value="yes"> 已逐項核對上方提醒，確認此筆應纳入目前選定的監測類型。</label>{% endif %}
+<label for="state">紀錄狀態</label><select id="state" name="state">{% for s,l in [('draft','待核對（不進月報）'),('confirmed','已確認（進月報）'),('void','作廢（保留歷程）')] %}<option value="{{s}}" {% if record.state==s %}selected{% endif %}>{{l}}</option>{% endfor %}</select>
+<label for="reason">核對／修正原因（必填）</label><textarea id="reason" name="reason" rows="2" required></textarea><p><button>儲存核對／修正</button> <a href="{{url_for('database')}}">返回資料庫</a></p></form>
+<details><summary>修改歷程（{{history|length}} 次）</summary>{% for h in history %}<div class="panel"><strong>{{h.changed_at}} · {{h.actor}}</strong><p>{{h.reason}}</p><details><summary>前後值</summary><pre>{{h.before_json}}</pre><pre>{{h.after_json}}</pre></details></div>{% else %}<p>尚無修改。</p>{% endfor %}</details>
+{% endblock %}

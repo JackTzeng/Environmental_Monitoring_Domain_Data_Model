@@ -1,0 +1,113 @@
+﻿source_type,valid_rows,field,present_count,source_unprovided_count,not_applicable_count,context_fallback_count,mapping_pending_count,parser_missed_count,status_note
+GTP1-6-Air,38,sample_date,38,0,0,0,0,0,來源日期/檔名日期
+GTP1-6-Air,38,site,38,0,0,0,0,0,文件廠別；無標示時資料夾脈絡
+GTP1-6-Air,38,monitoring_type,38,0,0,0,0,0,文件勾選或報告類型
+GTP1-6-Air,38,method,38,0,0,0,0,0,文件勾選方法
+GTP1-6-Air,38,room,37,0,1,0,0,0,明確拆分或限定參考對照；控制/無塵衣位置不適用
+GTP1-6-Air,38,grade,38,0,0,0,0,0,來源欄
+GTP1-6-Air,38,point_id,38,0,0,0,0,0,來源位置欄，保留括號後綴
+GTP1-6-Air,38,operator,0,38,0,0,0,0,來源未提供操作者；未用檢驗人員代填
+GTP1-6-Air,38,batch_no,0,38,0,0,0,0,只在無塵衣報告提供批次編碼
+GTP1-6-Air,38,result_raw,38,0,0,0,0,0,來源結果欄
+GTP1-6-Air,38,result_type,38,0,0,0,0,0,由原始結果辨識
+GTP1-6-Air,38,cfu_count,38,0,0,0,0,0,由可計數原始結果轉換
+GTP1-6-Air,38,unit,38,0,0,0,0,0,依結果(CFU)來源標頭
+GTP1-6-Air,38,organism_name,0,38,0,0,0,0,來源未提供菌種
+GTP1-6-Air,38,alert_raw,38,0,0,0,0,0,來源 Alert 欄；無塵衣標準欄不映射
+GTP1-6-Air,38,action_raw,38,0,0,0,0,0,來源 Action 欄；無塵衣標準欄不映射
+GTP1-6-Contact,26,sample_date,26,0,0,0,0,0,來源日期/檔名日期
+GTP1-6-Contact,26,site,26,0,0,0,0,0,文件廠別；無標示時資料夾脈絡
+GTP1-6-Contact,26,monitoring_type,26,0,0,0,0,0,文件勾選或報告類型
+GTP1-6-Contact,26,method,26,0,0,0,0,0,文件勾選方法
+GTP1-6-Contact,26,room,25,0,1,0,0,0,明確拆分或限定參考對照；控制/無塵衣位置不適用
+GTP1-6-Contact,26,grade,26,0,0,0,0,0,來源欄
+GTP1-6-Contact,26,point_id,26,0,0,0,0,0,來源位置欄，保留括號後綴
+GTP1-6-Contact,26,operator,0,26,0,0,0,0,來源未提供操作者；未用檢驗人員代填
+GTP1-6-Contact,26,batch_no,0,26,0,0,0,0,只在無塵衣報告提供批次編碼
+GTP1-6-Contact,26,result_raw,26,0,0,0,0,0,來源結果欄
+GTP1-6-Contact,26,result_type,26,0,0,0,0,0,由原始結果辨識
+GTP1-6-Contact,26,cfu_count,26,0,0,0,0,0,由可計數原始結果轉換
+GTP1-6-Contact,26,unit,26,0,0,0,0,0,依結果(CFU)來源標頭
+GTP1-6-Contact,26,organism_name,0,26,0,0,0,0,來源未提供菌種
+GTP1-6-Contact,26,alert_raw,26,0,0,0,0,0,來源 Alert 欄；無塵衣標準欄不映射
+GTP1-6-Contact,26,action_raw,26,0,0,0,0,0,來源 Action 欄；無塵衣標準欄不映射
+GTP7-8-Air,16,sample_date,16,0,0,0,0,0,來源日期/檔名日期
+GTP7-8-Air,16,site,16,0,0,0,0,0,文件廠別；無標示時資料夾脈絡
+GTP7-8-Air,16,monitoring_type,16,0,0,0,0,0,文件勾選或報告類型
+GTP7-8-Air,16,method,16,0,0,0,0,0,文件勾選方法
+GTP7-8-Air,16,room,15,0,1,0,0,0,明確拆分或限定參考對照；控制/無塵衣位置不適用
+GTP7-8-Air,16,grade,16,0,0,0,0,0,來源欄
+GTP7-8-Air,16,point_id,16,0,0,0,0,0,來源位置欄，保留括號後綴
+GTP7-8-Air,16,operator,0,16,0,0,0,0,來源未提供操作者；未用檢驗人員代填
+GTP7-8-Air,16,batch_no,0,16,0,0,0,0,只在無塵衣報告提供批次編碼
+GTP7-8-Air,16,result_raw,16,0,0,0,0,0,來源結果欄
+GTP7-8-Air,16,result_type,16,0,0,0,0,0,由原始結果辨識
+GTP7-8-Air,16,cfu_count,16,0,0,0,0,0,由可計數原始結果轉換
+GTP7-8-Air,16,unit,16,0,0,0,0,0,依結果(CFU)來源標頭
+GTP7-8-Air,16,organism_name,0,16,0,0,0,0,來源未提供菌種
+GTP7-8-Air,16,alert_raw,16,0,0,0,0,0,來源 Alert 欄；無塵衣標準欄不映射
+GTP7-8-Air,16,action_raw,16,0,0,0,0,0,來源 Action 欄；無塵衣標準欄不映射
+GTP7-8-BSC,16,sample_date,16,0,0,0,0,0,來源日期/檔名日期
+GTP7-8-BSC,16,site,16,0,0,0,0,0,文件廠別；無標示時資料夾脈絡
+GTP7-8-BSC,16,monitoring_type,16,0,0,0,0,0,文件勾選或報告類型
+GTP7-8-BSC,16,method,16,0,0,0,0,0,文件勾選方法
+GTP7-8-BSC,16,room,15,0,1,0,0,0,明確拆分或限定參考對照；控制/無塵衣位置不適用
+GTP7-8-BSC,16,grade,16,0,0,0,0,0,來源欄
+GTP7-8-BSC,16,point_id,16,0,0,0,0,0,來源位置欄，保留括號後綴
+GTP7-8-BSC,16,operator,0,16,0,0,0,0,來源未提供操作者；未用檢驗人員代填
+GTP7-8-BSC,16,batch_no,0,16,0,0,0,0,只在無塵衣報告提供批次編碼
+GTP7-8-BSC,16,result_raw,16,0,0,0,0,0,來源結果欄
+GTP7-8-BSC,16,result_type,16,0,0,0,0,0,由原始結果辨識
+GTP7-8-BSC,16,cfu_count,16,0,0,0,0,0,由可計數原始結果轉換
+GTP7-8-BSC,16,unit,16,0,0,0,0,0,依結果(CFU)來源標頭
+GTP7-8-BSC,16,organism_name,0,16,0,0,0,0,來源未提供菌種
+GTP7-8-BSC,16,alert_raw,16,0,0,0,0,0,來源 Alert 欄；無塵衣標準欄不映射
+GTP7-8-BSC,16,action_raw,16,0,0,0,0,0,來源 Action 欄；無塵衣標準欄不映射
+GTP1-6-BSC,31,sample_date,31,0,0,0,0,0,來源日期/檔名日期
+GTP1-6-BSC,31,site,31,0,0,0,0,0,文件廠別；無標示時資料夾脈絡
+GTP1-6-BSC,31,monitoring_type,31,0,0,0,0,0,文件勾選或報告類型
+GTP1-6-BSC,31,method,31,0,0,0,0,0,文件勾選方法
+GTP1-6-BSC,31,room,30,0,1,0,0,0,明確拆分或限定參考對照；控制/無塵衣位置不適用
+GTP1-6-BSC,31,grade,31,0,0,0,0,0,來源欄
+GTP1-6-BSC,31,point_id,31,0,0,0,0,0,來源位置欄，保留括號後綴
+GTP1-6-BSC,31,operator,0,31,0,0,0,0,來源未提供操作者；未用檢驗人員代填
+GTP1-6-BSC,31,batch_no,0,31,0,0,0,0,只在無塵衣報告提供批次編碼
+GTP1-6-BSC,31,result_raw,31,0,0,0,0,0,來源結果欄
+GTP1-6-BSC,31,result_type,31,0,0,0,0,0,由原始結果辨識
+GTP1-6-BSC,31,cfu_count,31,0,0,0,0,0,由可計數原始結果轉換
+GTP1-6-BSC,31,unit,31,0,0,0,0,0,依結果(CFU)來源標頭
+GTP1-6-BSC,31,organism_name,0,31,0,0,0,0,來源未提供菌種
+GTP1-6-BSC,31,alert_raw,31,0,0,0,0,0,來源 Alert 欄；無塵衣標準欄不映射
+GTP1-6-BSC,31,action_raw,31,0,0,0,0,0,來源 Action 欄；無塵衣標準欄不映射
+GTP7-8-Contact,7,sample_date,7,0,0,0,0,0,來源日期/檔名日期
+GTP7-8-Contact,7,site,7,0,0,0,0,0,文件廠別；無標示時資料夾脈絡
+GTP7-8-Contact,7,monitoring_type,7,0,0,0,0,0,文件勾選或報告類型
+GTP7-8-Contact,7,method,7,0,0,0,0,0,文件勾選方法
+GTP7-8-Contact,7,room,6,0,1,0,0,0,明確拆分或限定參考對照；控制/無塵衣位置不適用
+GTP7-8-Contact,7,grade,7,0,0,0,0,0,來源欄
+GTP7-8-Contact,7,point_id,7,0,0,0,0,0,來源位置欄，保留括號後綴
+GTP7-8-Contact,7,operator,0,7,0,0,0,0,來源未提供操作者；未用檢驗人員代填
+GTP7-8-Contact,7,batch_no,0,7,0,0,0,0,只在無塵衣報告提供批次編碼
+GTP7-8-Contact,7,result_raw,7,0,0,0,0,0,來源結果欄
+GTP7-8-Contact,7,result_type,7,0,0,0,0,0,由原始結果辨識
+GTP7-8-Contact,7,cfu_count,7,0,0,0,0,0,由可計數原始結果轉換
+GTP7-8-Contact,7,unit,7,0,0,0,0,0,依結果(CFU)來源標頭
+GTP7-8-Contact,7,organism_name,0,7,0,0,0,0,來源未提供菌種
+GTP7-8-Contact,7,alert_raw,7,0,0,0,0,0,來源 Alert 欄；無塵衣標準欄不映射
+GTP7-8-Contact,7,action_raw,7,0,0,0,0,0,來源 Action 欄；無塵衣標準欄不映射
+Cleanroom,6,sample_date,6,0,0,0,0,0,來源日期/檔名日期
+Cleanroom,6,site,0,0,0,6,0,0,文件廠別；無標示時資料夾脈絡
+Cleanroom,6,monitoring_type,6,0,0,0,0,0,文件勾選或報告類型
+Cleanroom,6,method,6,0,0,0,0,0,文件勾選方法
+Cleanroom,6,room,0,0,6,0,0,0,明確拆分或限定參考對照；控制/無塵衣位置不適用
+Cleanroom,6,grade,6,0,0,0,0,0,來源欄
+Cleanroom,6,point_id,6,0,0,0,0,0,來源位置欄，保留括號後綴
+Cleanroom,6,operator,0,6,0,0,0,0,來源未提供操作者；未用檢驗人員代填
+Cleanroom,6,batch_no,6,0,0,0,0,0,只在無塵衣報告提供批次編碼
+Cleanroom,6,result_raw,6,0,0,0,0,0,來源結果欄
+Cleanroom,6,result_type,6,0,0,0,0,0,由原始結果辨識
+Cleanroom,6,cfu_count,6,0,0,0,0,0,由可計數原始結果轉換
+Cleanroom,6,unit,6,0,0,0,0,0,依結果(CFU)來源標頭
+Cleanroom,6,organism_name,0,6,0,0,0,0,來源未提供菌種
+Cleanroom,6,alert_raw,0,0,6,0,0,0,來源 Alert 欄；無塵衣標準欄不映射
+Cleanroom,6,action_raw,0,0,6,0,0,0,來源 Action 欄；無塵衣標準欄不映射
