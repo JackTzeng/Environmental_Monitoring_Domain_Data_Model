@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% block body %}
+{% extends 'base.html' %}{% block main_class %}{% if view == 'matrix' %}matrix-page{% endif %}{% endblock %}{% block body %}
 {% if view == 'month' %}
 <h1>{{year}} 年 {{'%02d'|format(month)}} 月採樣明細</h1>
 <p class="muted">{{point_label}} · 共 {{rows|length}} 筆。依採樣日期列出當月全部資料；點紀錄可查看原始辨認值、人工修正與歷程。</p>
@@ -51,7 +51,9 @@
   <a class="button secondary" href="{{url_for('records_csv')}}">匯出 CSV</a>
 </form>
 <p class="muted">{{year}} 年符合條件的明細 {{total}} 筆；矩陣 {{matrix|length}} 組。趨勢圖僅連接最早日可計數的 CFU；特殊值、無採樣與最早日衝突不畫成數值。{% if undated_count %}另有 {{undated_count}} 筆日期空缺或格式錯誤，無法放入月份。{% endif %}</p>
-<div class="panel scroll"><table class="matrix-table"><thead><tr><th>房間－點位</th><th>Grade</th><th>Alarm Lv 全年原文</th><th>Action Lv 全年原文</th>{% for month in range(1,13) %}<th>{{'%02d'|format(month)}}月</th>{% endfor %}<th>點位趨勢圖</th></tr></thead><tbody>
+<div class="panel matrix-panel">
+<div class="matrix-top-scroll" role="region" aria-label="矩陣上方水平捲動條" tabindex="0"><div class="matrix-top-scroll-inner"></div></div>
+<div class="matrix-table-scroll scroll"><table class="matrix-table"><thead><tr><th>房間－點位</th><th>Grade</th><th>Alarm Lv 全年原文</th><th>Action Lv 全年原文</th>{% for month in range(1,13) %}<th>{{'%02d'|format(month)}}月</th>{% endfor %}<th>點位趨勢圖</th></tr></thead><tbody>
 {% set ns=namespace(group='',room='') %}
 {% for row in matrix %}
   {% set group=row.site ~ '｜' ~ row.monitoring_type ~ '｜' ~ row.method %}
@@ -76,5 +78,29 @@
   </tr>
 {% else %}<tr><td colspan="17">此年度尚無符合條件的資料。</td></tr>{% endfor %}
 </tbody></table></div>
+</div>
+<script>
+(() => {
+  const panel = document.querySelector('.matrix-panel');
+  const top = panel?.querySelector('.matrix-top-scroll');
+  const bottom = panel?.querySelector('.matrix-table-scroll');
+  const table = panel?.querySelector('.matrix-table');
+  const inner = panel?.querySelector('.matrix-top-scroll-inner');
+  if (!top || !bottom || !table || !inner) return;
+  const sync = (source, target) => {
+    if (target.scrollLeft !== source.scrollLeft) target.scrollLeft = source.scrollLeft;
+  };
+  const resize = () => {
+    inner.style.width = `${bottom.scrollWidth}px`;
+    top.hidden = bottom.scrollWidth <= bottom.clientWidth + 1;
+    sync(bottom, top);
+  };
+  top.addEventListener('scroll', () => sync(top, bottom), {passive: true});
+  bottom.addEventListener('scroll', () => sync(bottom, top), {passive: true});
+  new ResizeObserver(resize).observe(bottom);
+  window.addEventListener('resize', resize, {passive: true});
+  resize();
+})();
+</script>
 {% endif %}
 {% endblock %}
