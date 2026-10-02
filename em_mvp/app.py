@@ -56,6 +56,33 @@ def candidate_key(record):
     return tuple(normalize_method(c.get(k)) if k == "method" else c.get(k, "").strip() for k in keys)
 
 
+def reparse_saved_source(data_dir, row):
+    source_path = Path(data_dir) / "sources" / (row["sha256"] + Path(row["name"]).suffix.lower())
+    if not source_path.is_file() or source_path.stat().st_size > 25 * 1024 * 1024:
+        raise ValueError("來源副本不存在或超過 25 MB；未重新解析。")
+    content = source_path.read_bytes()
+    context = json.loads(row["context_json"] or "{}")
+    if not isinstance(context, dict):
+        context = {}
+    if not context.get("source_prefix"):
+        with store.closing(store.connection(data_dir)) as db:
+            first_record = db.execute(
+                "SELECT source_location FROM records WHERE source_id=? ORDER BY id LIMIT 1",
+                (row["id"],),
+            ).fetchone()
+        if first_record:
+            prefix = re.sub(r"(?:Word table \d+ row \d+|CSV row \d+|Sheet .+ row \d+)$", "",
+                            first_record["source_location"])
+            if prefix != first_record["source_location"]:
+                context["source_prefix"] = prefix
+    parsed = parse_file(row["name"], content, context)
+    prefix = context.get("source_prefix", "")
+    if prefix:
+        for item in parsed:
+            item["source_location"] = prefix + item["source_location"]
+    return store.reparse_source(data_dir, row["id"], content, parsed, PARSER_VERSION)
+
+
 def months_between(start, end):
     if not start or not end:
         return []
@@ -174,14 +201,17 @@ def create_app(data_dir=None):
     @app.route("/")
     def index():
         all_rows = store.records(data_dir)
+        sources = store.sources(data_dir)
         return render_template("input.html", count=len(all_rows), data_dir=data_dir,
                                imports=store.import_history(data_dir),
-                               sources=store.sources(data_dir),
+                               sources=sources,
+                               stale_source_count=sum(source["latest_parser_version"] != PARSER_VERSION
+                                                      for source in sources),
                                folder_job=latest_folder_import(data_dir))
 
     @app.get("/health")
     def health():
-        return {"app": "em-mvp", "version": "0.3.0", "parser_version": PARSER_VERSION}
+        return {"app": "em-mvp", "version": "0.4.0", "parser_version": PARSER_VERSION}
 
     @app.post("/import")
     def import_files():
@@ -383,29 +413,10 @@ def create_app(data_dir=None):
     def reparse(source_id):
         with store.closing(store.connection(data_dir)) as db:
             row = db.execute("SELECT * FROM sources WHERE id=?", (source_id,)).fetchone()
-            first_record = db.execute("SELECT source_location FROM records WHERE source_id=? ORDER BY id LIMIT 1",
-                                      (source_id,)).fetchone()
         if not row:
             abort(404)
-        source_path = data_dir / "sources" / (row["sha256"] + Path(row["name"]).suffix.lower())
         try:
-            if not source_path.is_file() or source_path.stat().st_size > 25 * 1024 * 1024:
-                raise ValueError("來源副本不存在或超過 25 MB；未重新解析。")
-            content = source_path.read_bytes()
-            context = json.loads(row["context_json"] or "{}")
-            if not isinstance(context, dict):
-                context = {}
-            if not context.get("source_prefix") and first_record:
-                prefix = re.sub(r"(?:Word table \d+ row \d+|CSV row \d+|Sheet .+ row \d+)$", "",
-                                first_record["source_location"])
-                if prefix != first_record["source_location"]:
-                    context["source_prefix"] = prefix
-            parsed = parse_file(row["name"], content, context)
-            prefix = context.get("source_prefix", "")
-            if prefix:
-                for item in parsed:
-                    item["source_location"] = prefix + item["source_location"]
-            result = store.reparse_source(data_dir, source_id, content, parsed, PARSER_VERSION)
+            result = reparse_saved_source(data_dir, row)
             if result["noop"]:
                 flash(f"{row['name']}：來源目前已是解析版本 {PARSER_VERSION}，沒有變更。")
             else:
@@ -414,6 +425,40 @@ def create_app(data_dir=None):
             store.log_import(data_dir, row["name"], None, "reparse_error", str(error))
             flash(f"{row['name']}：重新解析未完成：{error}")
         return redirect(url_for("index"))
+
+    @app.post("/reparse-batch")
+    def reparse_batch():
+        results = []
+        counts = {"success": 0, "skipped": 0, "conflict": 0, "failed": 0}
+        for source in store.sources(data_dir):
+            if source["latest_parser_version"] == PARSER_VERSION:
+                continue
+            try:
+                result = reparse_saved_source(data_dir, source)
+                if result["noop"]:
+                    outcome = "skipped"
+                    detail = f"來源已是 parser {PARSER_VERSION}；沒有修改。"
+                    store.log_import(data_dir, source["name"], None, "reparse_skipped", detail)
+                elif result["conflicts"]:
+                    outcome = "conflict"
+                    detail = (f"已重新解析；新增 {result['added']}、補值紀錄 {result['updated']}、"
+                              f"待核對差異 {result['conflicts']}、保留作廢 {result['voided']}；"
+                              f"備份 {result['backup']}。")
+                else:
+                    outcome = "success"
+                    detail = (f"新增 {result['added']}、補值紀錄 {result['updated']}、"
+                              f"保留作廢 {result['voided']}；備份 {result['backup']}。")
+                counts[outcome] += 1
+                results.append({"name": source["name"], "outcome": outcome, "detail": detail,
+                                "backup": result.get("backup", "")})
+            except (ValueError, OSError, sqlite3.Error) as error:
+                detail = str(error)
+                store.log_import(data_dir, source["name"], None, "reparse_failed", detail)
+                counts["failed"] += 1
+                results.append({"name": source["name"], "outcome": "failed", "detail": detail,
+                                "backup": ""})
+        return render_template("reparse_results.html", results=results, counts=counts,
+                               parser_version=PARSER_VERSION)
 
     @app.get("/records.csv")
     def records_csv():

@@ -1,0 +1,9 @@
+{% extends 'base.html' %}{% block body %}
+<h1>舊來源批次重新解析結果</h1>
+<p class="muted">Parser {{parser_version}} · 本次逐來源使用保護式重新解析；結果類型為待核對時不代表已人工確認。</p>
+<p data-success="{{counts.success}}" data-conflict="{{counts.conflict}}" data-skipped="{{counts.skipped}}" data-failed="{{counts.failed}}"><span class="tag">成功 {{counts.success}}</span> <span class="tag matrix-review">待核對差異 {{counts.conflict}}</span> <span class="tag">略過 {{counts.skipped}}</span> <span class="tag matrix-review">失敗 {{counts.failed}}</span></p>
+<div class="panel scroll"><table><thead><tr><th>來源</th><th>結果</th><th>明細</th></tr></thead><tbody>
+{% for item in results %}<tr data-outcome="{{item.outcome}}"><td>{{item.name}}</td><td>{{{'success':'成功','conflict':'待核對差異','skipped':'略過','failed':'失敗'}[item.outcome]}}</td><td>{{item.detail}}</td></tr>{% else %}<tr data-outcome="none"><td colspan="3">沒有舊版本來源需要處理。</td></tr>{% endfor %}
+</tbody></table></div>
+<p><a class="button secondary" href="{{url_for('index')}}">返回輸入</a> <a class="button" href="{{url_for('database')}}">查看資料庫</a></p>
+{% endblock %}

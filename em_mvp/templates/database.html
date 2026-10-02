@@ -37,7 +37,8 @@
 
 {% else %}
 <h1>資料庫逐月點位矩陣</h1>
-<p class="muted">依廠別、監測類型、方法、房間、Grade、點位及單位分組。每月只顯示該月最早採樣日的目前結果，不加總；月格可開啟當月全部採樣與來源。預設含待核對資料，狀態會標示；作廢資料預設排除。正式月報仍只採用已確認紀錄。</p>
+<p class="muted">依廠別、監測類型、方法、房間、Grade、點位及單位分組。每月只顯示該月最早採樣日的目前結果，不加總；月格可開啟當月全部採樣與來源。判色僅使用月格代表紀錄同筆來源的 Alarm／Action 原文，不使用全年或其他月份限值。預設含待核對資料，狀態會標示；作廢資料預設排除。正式月報仍只採用已確認紀錄。</p>
+<p class="muted" aria-label="限值提示圖例"><span class="tag">正常：無底色</span> <span class="tag matrix-alarm">警戒：超 Alarm 黃底</span> <span class="tag matrix-action">行動：超 Action 紅底</span> <span class="tag matrix-review">需核對：限值未知、結果不可數值比較或同日衝突</span></p>
 <form method="get" action="{{url_for('database')}}" class="controls">
   <input type="hidden" name="view" value="matrix">
   <label>年度<select name="year">{% if year not in years %}<option selected value="{{year}}">{{year}}</option>{% endif %}{% for y in years %}<option value="{{y}}" {% if year==y %}selected{% endif %}>{{y}}</option>{% endfor %}</select></label>
@@ -50,7 +51,7 @@
   <a class="button secondary" href="{{url_for('records_csv')}}">匯出 CSV</a>
 </form>
 <p class="muted">{{year}} 年符合條件的明細 {{total}} 筆；矩陣 {{matrix|length}} 組。趨勢圖僅連接最早日可計數的 CFU；特殊值、無採樣與最早日衝突不畫成數值。{% if undated_count %}另有 {{undated_count}} 筆日期空缺或格式錯誤，無法放入月份。{% endif %}</p>
-<div class="panel scroll"><table class="matrix-table"><thead><tr><th>房間－點位</th><th>Grade</th><th>Alarm Lv 原文</th><th>Action Lv 原文</th>{% for month in range(1,13) %}<th>{{'%02d'|format(month)}}月</th>{% endfor %}<th>點位趨勢圖</th></tr></thead><tbody>
+<div class="panel scroll"><table class="matrix-table"><thead><tr><th>房間－點位</th><th>Grade</th><th>Alarm Lv 全年原文</th><th>Action Lv 全年原文</th>{% for month in range(1,13) %}<th>{{'%02d'|format(month)}}月</th>{% endfor %}<th>點位趨勢圖</th></tr></thead><tbody>
 {% set ns=namespace(group='',room='') %}
 {% for row in matrix %}
   {% set group=row.site ~ '｜' ~ row.monitoring_type ~ '｜' ~ row.method %}
@@ -61,9 +62,10 @@
     <td>{{row.grade or '未填'}}</td>
     <td>{% for value in row.alarm_values %}{{value}}{% if not loop.last %}<br>{% endif %}{% endfor %}{% if row.alarm_values|length>1 %}<br><span class="tag conflict-tag">來源限值有差異</span>{% endif %}</td>
     <td>{% for value in row.action_values %}{{value}}{% if not loop.last %}<br>{% endif %}{% endfor %}{% if row.action_values|length>1 %}<br><span class="tag conflict-tag">來源限值有差異</span>{% endif %}</td>
-    {% for month in range(1,13) %}{% set cell=row.months[month] %}<td class="matrix-cell {% if cell.numeric is not none and cell.numeric>0 %}positive{% endif %} {% if cell.first_conflict %}matrix-conflict{% endif %}">
+    {% for month in range(1,13) %}{% set cell=row.months[month] %}<td class="matrix-cell {% if cell.status %}matrix-{{cell.status}}{% endif %}">
       {% if cell.has_samples %}
-        <a class="matrix-value" href="{{url_for('database',view='month',year=year,month='%02d'|format(month),site=row.site,monitoring_type=row.monitoring_type,method=row.method,room=row.room,grade=row.grade,point_id=row.point_id,unit=row.unit,state=state)}}" title="{{cell.first_date}} 最早採樣日；共 {{cell.sample_count}} 筆明細">{{cell.display}}</a>
+        <a class="matrix-value" href="{{url_for('database',view='month',year=year,month='%02d'|format(month),site=row.site,monitoring_type=row.monitoring_type,method=row.method,room=row.room,grade=row.grade,point_id=row.point_id,unit=row.unit,state=state)}}" aria-label="{{cell.first_date}} {{cell.display}}；判定 {{cell.status_text}}；判定依據代表來源 {{cell.limit_source or '未提供'}}；Alarm {{cell.alert_raw or '未填'}}；Action {{cell.action_raw or '未填'}}" title="{{cell.first_date}} 最早採樣日；{{cell.status_text}}；判定依據：代表來源 {{cell.limit_source or '未提供'}}；Alarm {{cell.alert_raw or '未填'}}；Action {{cell.action_raw or '未填'}}；共 {{cell.sample_count}} 筆明細">{{cell.display}}</a>
+        <span class="tag">{{cell.status_text}}</span>
         <span class="matrix-tags">共 {{cell.sample_count}} 筆</span>
         {% if cell.first_day_count>1 %}<span class="matrix-tags">最早日 {{cell.first_day_count}} 筆</span>{% endif %}
         {% if cell.pending %}<span class="tag">含待核對</span>{% endif %}

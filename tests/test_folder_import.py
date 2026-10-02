@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import tempfile
 import time
@@ -11,7 +12,7 @@ from unittest.mock import patch
 from openpyxl import Workbook
 
 from em_mvp import store
-from em_mvp.app import create_app
+from em_mvp.app import create_app, reparse_saved_source
 from em_mvp.domain import FIELDS
 from em_mvp.folder_import import MAX_FOLDER_FILE_BYTES, validate_folder
 from em_mvp.reporting import field_accuracy
@@ -33,6 +34,24 @@ def word_file(sample_date="2026-06-03", result="2"):
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
         archive.writestr("word/document.xml", xml)
+    return output.getvalue()
+
+
+def first_factory_folder_word_file():
+    ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    from xml.sax.saxutils import escape
+    paragraphs = "".join(
+        f"<w:p><w:r><w:t>{escape(text)}</w:t></w:r></w:p>"
+        for text in ("採樣日期：2026-05-19", "監測類型：例行環測", "監測方式：空氣採樣法")
+    )
+    rows = [["房間", "監測位置", "結果(CFU)"],
+            ["C06D", "a11", "3(1mold)"], ["", "Negative control", "0"]]
+    table = "".join("<w:tr>" + "".join(
+        f"<w:tc><w:p><w:r><w:t>{escape(cell)}</w:t></w:r></w:p></w:tc>" for cell in row
+    ) + "</w:tr>" for row in rows)
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("word/document.xml", f'<w:document xmlns:w="{ns}"><w:body>{paragraphs}<w:tbl>{table}</w:tbl></w:body></w:document>')
     return output.getvalue()
 
 
@@ -97,6 +116,65 @@ class FolderImportTests(unittest.TestCase):
         self.assertEqual(len(records), 3)
         self.assertTrue(any("level1/level2/c.docx" in row["source_location"] for row in records))
         self.assertTrue(all(row["state"] == "draft" for row in records))
+
+    def test_first_factory_folder_context_classifies_every_imported_row_once(self):
+        root = self.path / "reports"
+        folder = root / "一廠環測"
+        folder.mkdir(parents=True)
+        (folder / "report.docx").write_bytes(first_factory_folder_word_file())
+
+        response = self.start(root)
+        self.assertEqual(response.status_code, 202)
+        job = self.wait(response.get_json()["job_id"])
+        records = store.records(self.path / "data")
+        sources = store.sources(self.path / "data")
+
+        self.assertEqual((job["new_files"], job["new_records"], job["failed_count"]), (1, 2, 0))
+        self.assertEqual({row["current"]["site"] for row in records}, {"一廠"})
+        sample = next(row for row in records if row["current"]["point_id"] == "a11")
+        control = next(row for row in records if row["current"]["point_id"] == "Negative control")
+        self.assertEqual(sample["current"]["room"], "C06D")
+        self.assertEqual(control["current"]["room"], "")
+        self.assertEqual(sample["current"]["cfu_count"], "3")
+        source_context = json.loads(sources[0]["context_json"])
+        self.assertEqual(source_context["source_prefix"], "一廠環測/report.docx / ")
+        self.assertEqual(source_context["source_folder"], "reports/一廠環測")
+        self.assertNotIn("site", source_context)
+        self.assertTrue(all(row["source_location"].startswith("一廠環測/report.docx / Word table 1 row ")
+                            for row in records))
+        self.assertEqual(len({row["source_location"] for row in records}), 2)
+
+    def test_selected_factory_root_name_provides_folder_context(self):
+        root = self.path / "一廠環測"
+        root.mkdir()
+        (root / "report.docx").write_bytes(first_factory_folder_word_file())
+
+        response = self.start(root)
+        self.assertEqual(response.status_code, 202)
+        job = self.wait(response.get_json()["job_id"])
+        records = store.records(self.path / "data")
+        source = store.sources(self.path / "data")[0]
+        source_context = json.loads(source["context_json"])
+        prefix = "report.docx / "
+
+        self.assertEqual((job["new_files"], job["new_records"], job["failed_count"]), (1, 2, 0))
+        self.assertEqual({row["current"]["site"] for row in records}, {"一廠"})
+        self.assertEqual(source_context["source_prefix"], prefix)
+        self.assertEqual(source_context["source_folder"], "一廠環測")
+        self.assertNotIn("site", source_context)
+        self.assertTrue(all(row["source_location"].count(prefix) == 1 for row in records))
+
+        with store.closing(store.connection(self.path / "data")) as db, db:
+            db.execute("UPDATE sources SET latest_parser_version='0.1.3' WHERE id=?", (source["id"],))
+        source = next(item for item in store.sources(self.path / "data") if item["id"] == source["id"])
+        result = reparse_saved_source(self.path / "data", source)
+        reparsed = store.records(self.path / "data")
+        self.assertFalse(result["noop"])
+        self.assertEqual(len(reparsed), 2)
+        self.assertEqual({row["current"]["site"] for row in reparsed}, {"一廠"})
+        self.assertEqual(next(row for row in reparsed if row["current"]["point_id"] == "Negative control")
+                         ["current"]["room"], "")
+        self.assertTrue(all(row["source_location"].count(prefix) == 1 for row in reparsed))
 
     def test_a2_rerun_preserves_manual_correction_and_history(self):
         root = self.path / "reports"
@@ -178,10 +256,10 @@ class FolderImportTests(unittest.TestCase):
 
         entered, release = Event(), Event()
         from em_mvp.importers import parse_file
-        def blocked_parse(filename, content):
+        def blocked_parse(filename, content, context=None):
             entered.set()
             self.assertTrue(release.wait(10))
-            return parse_file(filename, content)
+            return parse_file(filename, content, context)
 
         with patch("em_mvp.folder_import.parse_file", side_effect=blocked_parse):
             first = self.start(root)

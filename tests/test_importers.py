@@ -31,8 +31,8 @@ class ImporterTests(unittest.TestCase):
         ], ["監測日期：2025/01/27", "監測方式：■空氣取樣 □落菌法"])
         records = parse_file("一廠-環境微生物監控報告.docx", data)
         self.assertEqual([r["values"]["result_type"] for r in records],
-                         ["count", "less_than", "tntc", "not_applicable", "unknown", "missing"])
-        self.assertEqual([r["values"]["cfu_count"] for r in records], ["0", "", "", "", "", ""])
+                         ["count", "less_than", "tntc", "not_applicable", "count", "missing"])
+        self.assertEqual([r["values"]["cfu_count"] for r in records], ["0", "", "", "", "2", ""])
         self.assertEqual(records[0]["values"]["sample_date"], "2025-01-27")
         self.assertEqual(records[0]["values"]["site"], "一廠")
         self.assertEqual(records[0]["values"]["point_id"], "a12")

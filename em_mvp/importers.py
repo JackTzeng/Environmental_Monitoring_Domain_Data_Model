@@ -13,7 +13,7 @@ from xml.etree import ElementTree as ET
 from .domain import FIELDS, normalize_method
 from .point_room_maps import POINT_ROOMS, ROOM_MAP_EVIDENCE, ROOM_MAP_SCOPE
 
-PARSER_VERSION = "0.1.3"
+PARSER_VERSION = "0.1.4"
 MAX_DOCX_XML_BYTES = 20_000_000
 MAX_XLSX_UNCOMPRESSED_BYTES = 80_000_000
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
@@ -45,7 +45,7 @@ _ALIASES = {
     "result_raw": ("結果", "結果CFU", "總菌數", "總菌數CFU", "CFU", "result_raw", "菌落數", "菌落數CFU"),
     "unit": ("單位", "unit"),
     "organism_name": ("菌種名稱", "菌種", "菌相", "organism_name"),
-    "alert_raw": ("Alarm Lv", "Alarm Lv CFU", "Alert", "警戒限值", "警戒值", "alert_raw"),
+    "alert_raw": ("Alarm Lv", "Alarm Lv CFU", "Alert Lv", "Alert Lv CFU", "Alert", "警戒限值", "警戒值", "alert_raw"),
     "action_raw": ("Action Lv", "Action Lv CFU", "Action", "行動限值", "行動值", "action_raw"),
     "_year": ("年", "year"), "_month": ("月", "month"), "_day": ("日", "day"),
     "_checked": ("核", "核閱", "核准", "checked"),
@@ -53,6 +53,8 @@ _ALIASES = {
 _HEADER_FIELDS = {_key(alias): field for field, aliases in _ALIASES.items() for alias in aliases}
 _CHECKED_BOXES = set("▓■▣☑☒✓✔")
 _BOX_TOKEN = re.compile(r"([▓■▣☑☒✓✔□☐▢])\s*([^▓■▣☑☒✓✔□☐▢]+)")
+_SITE_LABEL = re.compile(r"(?<![0-9一二三四五六七八九十百千])(一廠|三廠|1廠|3廠)(?![0-9])")
+_FOLDER_SITE_LABEL = re.compile(r"^(一廠|三廠|1廠|3廠)(?![0-9])")
 
 
 def _header_field(value: object) -> str:
@@ -75,13 +77,56 @@ def _iso_date(value: str) -> str:
         return ""
 
 
+def _site_value(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value).strip()
+    return {"1廠": "一廠", "3廠": "三廠"}.get(value, value)
+
+
+def _site_mentions(value: str) -> list[str]:
+    value = unicodedata.normalize("NFKC", value)
+    return [_site_value(match.group(1)) for match in _SITE_LABEL.finditer(value)]
+
+
+def _prefix_site(prefix: str, has_filename: bool = True) -> tuple[str, bool]:
+    parts = [part.strip() for part in re.split(r"[/\\|／]+", unicodedata.normalize("NFKC", prefix))
+             if part.strip()]
+    if has_filename and parts and re.search(r"\.[A-Za-z0-9]{1,8}$", parts[-1]):
+        parts.pop()  # source_prefix ends with the source filename; only folders classify a site.
+    sites = set()
+    unresolved = False
+    for part in parts:
+        mentions = set(_site_mentions(part))
+        if not mentions and "廠" not in part:
+            continue
+        leading = _FOLDER_SITE_LABEL.match(part)
+        if not leading or mentions != {_site_value(leading.group(1))}:
+            unresolved = True
+        else:
+            sites.update(mentions)
+    if unresolved or len(sites) > 1:
+        return "", True
+    if sites:
+        return sites.pop(), False
+    return "", False
+
+
+def _room_site(room: str) -> str:
+    room = unicodedata.normalize("NFKC", room).strip().upper()
+    return "一廠" if re.fullmatch(r"C0[1-6][A-Z]?", room) else ""
+
+
 def _result(raw: str) -> tuple[str, str]:
     text = unicodedata.normalize("NFKC", raw).strip()
     if not text:
         return "missing", ""
     if re.fullmatch(r"\d+(?:\s*CFU(?:\s*/\s*(?:plate|皿))?)?", text, re.I):
         return "count", str(int(re.match(r"\d+", text).group()))
+    note = r"(?:(?:\d+\s*)?(?:(?:白|黑|white|black)\s*)?(?:molds?|satellites?)|(?:\d+\s*)?(?:白|黑|white|black))"
+    if re.fullmatch(rf"([0-9]+)\s*[（(]\s*{note}(?:\s*[,，、;；/]\s*{note})*\s*[）)]", text, re.I):
+        return "count", str(int(re.match(r"\d+", text).group()))
     if re.fullmatch(r"TNTC|too numerous to count|不可計數|無法計數", text, re.I):
+        return "tntc", ""
+    if re.fullmatch(rf"(?:TNTC|too numerous to count|不可計數|無法計數)\s*[（(]\s*(?:\d+\s*)?(?:molds?|satellites?)\s*[）)]", text, re.I):
         return "tntc", ""
     if re.fullmatch(r"<\s*\d+(?:\.\d+)?(?:\s*CFU)?", text, re.I):
         return "less_than", ""
@@ -101,10 +146,9 @@ def _selected_box(value: str, field: str, warnings: list[str]) -> str:
 
 def _metadata(filename: str, texts: list[str], context: dict | None = None) -> dict:
     metadata: dict[str, str] = {}
-    site = re.search(r"(?:一廠|三廠|1廠|3廠)", filename)
-    if site:
-        metadata["site"] = {"1廠": "一廠", "3廠": "三廠"}.get(site.group(), site.group())
-    explicit_site = metadata.get("site", "")
+    warnings = []
+    filename_sites = _site_mentions(filename)
+    text_sites = []
     exceptional_purpose = next((word for word in ("污染", "汙染", "重測", "超標", "無塵衣", "製程人員") if word in filename), "")
     if exceptional_purpose:
         metadata["monitoring_type"] = exceptional_purpose
@@ -127,22 +171,40 @@ def _metadata(filename: str, texts: list[str], context: dict | None = None) -> d
                 value = _selected_box(value, field, box_warnings)
                 metadata.setdefault("_warnings", []).extend(box_warnings)
             if field == "site" and value:
-                value = {"1廠": "一廠", "3廠": "三廠"}.get(value, value)
-                explicit_site = value
+                text_sites.append(_site_value(value))
             metadata[field] = value
-    site_context = (context or {}).get("site", "") if isinstance(context, dict) else ""
-    if explicit_site and site_context and explicit_site != site_context:
-        metadata.setdefault("_warnings", []).append(
-            f"site: 文件廠別 {explicit_site} 與匯入資料夾脈絡 {site_context} 不同；保留文件廠別")
-    elif not explicit_site and site_context:
-        metadata["site"] = site_context
-        metadata.setdefault("_warnings", []).append(
-            f"site: 文件未提供廠別；依匯入資料夾脈絡補為 {site_context}")
+    filename_site = filename_sites[0] if filename_sites else ""
+    explicit_site = text_sites[0] if text_sites else filename_site
+    source_sites = set(filename_sites + text_sites)
+    if len(source_sites) > 1:
+        warnings.append(f"site: 檔名／文件廠別互相衝突 {', '.join(sorted(source_sites))}；保留文件欄位優先值供核對")
+    site_context = _site_value(_text((context or {}).get("site"))) if isinstance(context, dict) else ""
+    folder_context = _text((context or {}).get("source_folder")) if isinstance(context, dict) else ""
+    if folder_context:
+        prefix_site, prefix_conflict = _prefix_site(folder_context, has_filename=False)
+    else:
+        prefix_site, prefix_conflict = _prefix_site(_text((context or {}).get("source_prefix"))) if isinstance(context, dict) else ("", False)
+    folder_site = site_context or prefix_site
+    if site_context and prefix_site and site_context != prefix_site:
+        warnings.append(f"site: 明確廠別脈絡 {site_context} 與來源資料夾脈絡 {prefix_site} 不同；保留明確脈絡待核對")
+    if prefix_conflict:
+        warnings.append("site: source_prefix 含多個或無法辨識的廠別資料夾；待核對")
+    if explicit_site:
+        metadata["site"] = explicit_site
+        if folder_site and explicit_site != folder_site:
+            warnings.append(f"site: 文件廠別 {explicit_site} 與匯入資料夾脈絡 {folder_site} 不同；保留文件廠別")
+    elif folder_site:
+        metadata["site"] = folder_site
+        warnings.append(f"site: 文件未提供廠別；依匯入資料夾脈絡補為 {folder_site}")
+    metadata["_site_context_uncertain"] = prefix_conflict and not (explicit_site or site_context)
+    metadata["_site_explicit"] = bool(explicit_site)
+    metadata.setdefault("_warnings", []).extend(warnings)
     return metadata
 
 
 def _make_record(values: dict[str, str], location: str, source: str, warnings: list[str]) -> dict:
     warnings.extend(values.pop("_warnings", []))
+    site_context_uncertain = bool(values.pop("_site_context_uncertain", False))
     values = {field: _text(values.get(field, "")) for field in FIELDS}
     if values["sample_date"]:
         raw_date = values["sample_date"]
@@ -176,6 +238,15 @@ def _make_record(values: dict[str, str], location: str, source: str, warnings: l
             warnings.append("room: 點位原文與房間欄位不一致，保留房間欄位供核對")
         elif not values["room"]:
             values["room"] = room.upper()
+    room_site = _room_site(values["room"])
+    if room_site:
+        if values["site"] and values["site"] != room_site:
+            warnings.append(f"site: 房間 {values['room']} 依規則屬於 {room_site}，與來源廠別 {values['site']} 不同；保留來源廠別待核對")
+        elif not values["site"] and not site_context_uncertain:
+            values["site"] = room_site
+            warnings.append(f"site: 依房間 {values['room']} 規則補為 {room_site}")
+        elif site_context_uncertain:
+            warnings.append("site: 廠別資料夾脈絡有未知或衝突；不依房間推導，待核對")
     mapped = re.fullmatch(r"(GTP7|GTP8)\s*[：:]\s*(BSC\d{2}(?:-\d+){1,2})", position, re.I)
     if mapped:
         factory_prefix, point = mapped.group(1).upper(), mapped.group(2).upper()
@@ -245,10 +316,21 @@ def _tabular_records(rows: list[list[str]], name: str, metadata: dict[str, str],
     header_index, mapping = _find_header(rows)
     metadata = dict(metadata)
     headings = " ".join(cell for row in rows[:header_index + 1] for cell in row)
-    sites = set(re.findall(r"一廠|三廠|1廠|3廠", headings))
-    if not metadata.get("site") and len(sites) == 1:
-        site = sites.pop()
-        metadata["site"] = {"1廠": "一廠", "3廠": "三廠"}.get(site, site)
+    sites = set(_site_mentions(headings))
+    heading_site = next(iter(sites)) if len(sites) == 1 else ""
+    if len(sites) > 1:
+        metadata.setdefault("_warnings", []).append(
+            f"site: 文件標題含多個廠別 {', '.join(sorted(sites))}；保留現有分類待核對")
+    if heading_site:
+        if metadata.get("site") and metadata["site"] != heading_site and not metadata.get("_site_explicit"):
+            metadata.setdefault("_warnings", []).append(
+                f"site: 文件標題廠別 {heading_site} 與匯入脈絡 {metadata['site']} 不同；保留文件標題廠別待核對")
+        elif metadata.get("site") and metadata["site"] != heading_site:
+            metadata.setdefault("_warnings", []).append(
+                f"site: 文件標題廠別 {heading_site} 與文件明確廠別 {metadata['site']} 不同；保留明確欄位待核對")
+        if not metadata.get("_site_explicit"):
+            metadata["site"] = heading_site
+            metadata["_site_explicit"] = True
     records = []
     header = rows[header_index]
     for row_index, row in enumerate(rows[header_index + 1:], start=header_index + 2):
@@ -277,6 +359,10 @@ def _tabular_records(rows: list[list[str]], name: str, metadata: dict[str, str],
                 warnings.append(f"{field}: 多個欄位值互相衝突")
             else:
                 values[field] = distinct[0] if distinct else values.get(field, "")
+            if field == "site" and len(distinct) == 1:
+                values[field] = _site_value(distinct[0])
+                if metadata.get("site") and values[field] != metadata["site"]:
+                    warnings.append(f"site: 明細廠別 {values[field]} 與檔案／資料夾脈絡 {metadata['site']} 不同；保留明細廠別待核對")
         if all(field in mapping for field in ("_year", "_month", "_day")):
             parts = [row[mapping[field][0]] if mapping[field][0] < len(row) else "" for field in ("_year", "_month", "_day")]
             values["sample_date"] = "-".join(parts)

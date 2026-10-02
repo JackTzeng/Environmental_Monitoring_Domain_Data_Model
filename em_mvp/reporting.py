@@ -2,6 +2,7 @@
 
 from datetime import date
 import re
+import unicodedata
 
 from .domain import FIELDS, normalize_method
 
@@ -71,6 +72,11 @@ def _matrix_display(record):
     raw = _text(current.get("result_raw"))
     if kind == "count":
         count = _count(current)
+        annotated = re.fullmatch(r"\s*([0-9]+)\s*[（(].*[）)]\s*", raw)
+        if count is not None and annotated:
+            if count == int(annotated.group(1)):
+                return raw
+            return f"{count}（目前結果原文：{raw}）"
         return str(count) if count is not None else (raw or _text(current.get("cfu_count")) or "待核對")
     if kind == "missing":
         return raw or "缺值"
@@ -81,6 +87,53 @@ def _matrix_display(record):
     if kind == "not_applicable":
         return raw or "N/A"
     return raw or "未辨認"
+
+
+def _parse_limit(value):
+    raw = _text(value)
+    if not raw:
+        return "missing", None, raw
+    normalized = unicodedata.normalize("NFKC", raw).replace("≦", "≤")
+    if normalized.strip().casefold() in {"na", "n/a", "n.a.", "not applicable", "不適用"}:
+        return "not_applicable", None, raw
+    match = re.fullmatch(
+        r"(?:(<=|≤|<)\s*)?([0-9]+(?:\.[0-9]+)?)\s*(?:CFU(?:\s*/\s*(?:m3|plate|皿))?)?",
+        normalized.strip(), re.I,
+    )
+    if not match:
+        return "unknown", None, raw
+    operator, threshold = match.groups()
+    return "valid", (operator or "max", float(threshold)), raw
+
+
+def _limit_exceeded(count, parsed_limit):
+    kind, parsed, _ = parsed_limit
+    if kind != "valid":
+        return False
+    operator, threshold = parsed
+    return count >= threshold if operator == "<" else count > threshold
+
+
+def _limit_status(count, alert_raw, action_raw, conflict=False):
+    if conflict:
+        return "review", "需核對"
+    if count is None:
+        return "review", "需核對"
+    alert = _parse_limit(alert_raw)
+    action = _parse_limit(action_raw)
+    action_exceeded = _limit_exceeded(count, action)
+    alert_exceeded = _limit_exceeded(count, alert)
+    if action_exceeded:
+        return "action", "行動"
+    if alert_exceeded:
+        if action[0] in ("missing", "unknown"):
+            return "review", "需核對"
+        return "alarm", "警戒"
+    if any(limit[0] in ("missing", "unknown") for limit in (alert, action)):
+        return "review", "需核對"
+    if not any(limit[0] == "valid" for limit in (alert, action)):
+        return "review", "需核對"
+    return "normal", "正常"
 
 
 def monthly_matrix(records: list[dict], year: int) -> list[dict]:
@@ -130,7 +183,7 @@ def monthly_matrix(records: list[dict], year: int) -> list[dict]:
                 row["months"][month] = {
                     "has_samples": False, "display": "—", "sample_count": 0,
                     "first_date": "", "first_conflict": False, "conflict_dates": [],
-                    "pending": False, "numeric": None,
+                    "pending": False, "numeric": None, "status": "", "status_text": "",
                 }
                 row["trend_values"].append(None)
                 continue
@@ -145,7 +198,11 @@ def monthly_matrix(records: list[dict], year: int) -> list[dict]:
             ]
             first_conflict = first_date in conflict_dates
             representative = sorted(first_records, key=lambda r: r["id"])[0]
-            numeric = None if first_conflict else _count(representative.get("current", {}))
+            current = representative.get("current", {})
+            numeric = None if first_conflict else _count(current)
+            status, status_text = _limit_status(
+                numeric, current.get("alert_raw"), current.get("action_raw"), first_conflict,
+            )
             row["months"][month] = {
                 "has_samples": True,
                 "display": "需核對" if first_conflict else _matrix_display(representative),
@@ -153,7 +210,11 @@ def monthly_matrix(records: list[dict], year: int) -> list[dict]:
                 "first_day_count": len(first_records), "first_conflict": first_conflict,
                 "conflict_dates": conflict_dates,
                 "pending": any(record.get("state") == "draft" for record in monthly),
-                "numeric": numeric,
+                "numeric": numeric, "status": status, "status_text": status_text,
+                "limit_date": first_date, "limit_source": representative.get("source_name", ""),
+                "limit_source_id": representative.get("source_id", ""),
+                "alert_raw": _text(current.get("alert_raw")),
+                "action_raw": _text(current.get("action_raw")),
             }
             row["trend_values"].append(numeric)
         output.append(row)

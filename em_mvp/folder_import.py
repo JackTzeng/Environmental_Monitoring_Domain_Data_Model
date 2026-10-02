@@ -139,8 +139,10 @@ def _run(job_id: str, root: Path, data_dir: Path, include_sheets: bool, context:
                 if size > MAX_FOLDER_FILE_BYTES:
                     raise ValueError("超過 25 MB 單檔限制；其他檔案會繼續處理。")
                 content = path.read_bytes()
-                file_context = {**context, "source_prefix": relative + " / "}
-                parsed = parse_file(path.name, content, context) if context else parse_file(path.name, content)
+                parent = Path(relative).parent.as_posix()
+                source_folder = "/".join(part for part in (root.name, parent if parent != "." else "") if part)
+                file_context = {**context, "source_prefix": relative + " / ", "source_folder": source_folder}
+                parsed = parse_file(path.name, content, file_context)
                 if not parsed:
                     raise ValueError("沒有可讀取的明細；未入庫。")
                 for row in parsed:
