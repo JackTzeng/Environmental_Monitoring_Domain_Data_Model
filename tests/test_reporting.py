@@ -79,11 +79,10 @@ class ReportingTests(unittest.TestCase):
             record(point_id="1", room="C23", grade="B", cfu_count="3"),
             record(point_id="1", room="C23", grade="A", unit="CFU/m3", cfu_count="4"),
         ])
-        self.assertEqual(len(report["points"]), 4)
+        self.assertEqual(len(report["points"]), 3)
         values = {(p["room"], p["grade"], p["unit"]): p["cfu"] for p in report["points"]}
         self.assertEqual(values[("C23", "A", "CFU/plate")], 1)
         self.assertEqual(values[("C24", "A", "CFU/plate")], 2)
-        self.assertEqual(values[("C23", "B", "CFU/plate")], 3)
         self.assertEqual(values[("C23", "A", "CFU/m3")], 4)
 
     def test_confirmed_finger_plate_alias_is_included_in_contact_crr(self):
@@ -97,9 +96,9 @@ class ReportingTests(unittest.TestCase):
         person = report["people"][0]
         self.assertEqual((person["positive_days"], person["total_days"], person["crr"]), (1, 1, 100))
 
-    def test_count_validation_and_isolator_without_operator(self):
+    def test_count_validation_keeps_special_values_nonnumeric(self):
         report = monthly_report([
-            record(cfu_count=value, operator="N/A")
+            record(cfu_count=value, operator="N/A", monitoring_type="例行環測")
             for value in (0, " 12 ", -1, "-2", "1.0", 1.0, True, None, "TNTC", "<1")
         ])
         self.assertEqual(report["people"], [])
@@ -113,7 +112,7 @@ class ReportingTests(unittest.TestCase):
             pending, record(sample_date="2026-02-30"), record(sample_date="20260701"),
             record(grade="B", cfu_count="9"), record(sample_date="2026-08-01", cfu_count="0"),
         ])
-        self.assertEqual(report["months"], ["2026-07", "2026-08"])
+        self.assertEqual(report["months"], ["2026-08"])
         self.assertEqual(len(report["people"]), 1)
         self.assertEqual(report["people"][0]["month"], "2026-08")
         self.assertEqual(report["people"][0]["crr"], 0)

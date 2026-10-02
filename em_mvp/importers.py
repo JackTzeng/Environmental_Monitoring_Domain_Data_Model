@@ -13,7 +13,7 @@ from xml.etree import ElementTree as ET
 from .domain import FIELDS, normalize_method
 from .point_room_maps import POINT_ROOMS, ROOM_MAP_EVIDENCE, ROOM_MAP_SCOPE
 
-PARSER_VERSION = "0.1.4"
+PARSER_VERSION = "0.1.7"
 MAX_DOCX_XML_BYTES = 20_000_000
 MAX_XLSX_UNCOMPRESSED_BYTES = 80_000_000
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
@@ -138,6 +138,11 @@ def _result(raw: str) -> tuple[str, str]:
 def _selected_box(value: str, field: str, warnings: list[str]) -> str:
     tokens = _BOX_TOKEN.findall(value)
     selected = [label.strip() for mark, label in tokens if mark in _CHECKED_BOXES]
+    if field == "monitoring_type" and len(selected) == 2 and set(selected) == {"製程監測", "人員監測"}:
+        warnings.append(
+            f"monitoring_type: 來源多選原文「{'＋'.join(selected)}」；依明確組合分類為製程監測"
+        )
+        return "製程監測"
     if len(selected) == 1:
         return selected[0]
     warnings.append(f"{field}: 勾選數量為 {len(selected)}，保留待核對")
@@ -145,8 +150,9 @@ def _selected_box(value: str, field: str, warnings: list[str]) -> str:
 
 
 def _metadata(filename: str, texts: list[str], context: dict | None = None) -> dict:
-    metadata: dict[str, str] = {}
+    metadata: dict[str, object] = {}
     warnings = []
+    operator_candidates = []
     filename_sites = _site_mentions(filename)
     text_sites = []
     exceptional_purpose = next((word for word in ("污染", "汙染", "重測", "超標", "無塵衣", "製程人員") if word in filename), "")
@@ -156,6 +162,7 @@ def _metadata(filename: str, texts: list[str], context: dict | None = None) -> d
         metadata["monitoring_type"] = "製程監測"
     elif "環境微生物監" in filename:
         metadata["monitoring_type"] = "例行環測"
+    metadata["_process_source"] = any(word in filename for word in ("製程", "製測"))
     file_date = re.search(r"(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)", filename)
     if file_date:
         metadata["sample_date"] = _iso_date("-".join(file_date.groups()))
@@ -167,12 +174,28 @@ def _metadata(filename: str, texts: list[str], context: dict | None = None) -> d
         if field in {"sample_date", "site", "monitoring_type", "method", "room", "operator", "batch_no"}:
             value = match.group(2).strip()
             if field in {"method", "monitoring_type"} and _BOX_TOKEN.search(value):
+                selected = [label.strip() for mark, label in _BOX_TOKEN.findall(value)
+                            if mark in _CHECKED_BOXES]
+                if field == "monitoring_type" and any(
+                    word in label for label in selected for word in ("製程", "製測")
+                ):
+                    metadata["_process_source"] = True
                 box_warnings: list[str] = []
                 value = _selected_box(value, field, box_warnings)
                 metadata.setdefault("_warnings", []).extend(box_warnings)
+            elif field == "monitoring_type" and any(word in value for word in ("製程", "製測")):
+                metadata["_process_source"] = True
+            if field == "operator":
+                names = _operator_names(value)
+                for name in names:
+                    if name not in operator_candidates:
+                        operator_candidates.append(name)
+                metadata["operator"] = operator_candidates[0] if len(operator_candidates) == 1 else ""
+                continue
             if field == "site" and value:
                 text_sites.append(_site_value(value))
             metadata[field] = value
+    metadata["_operator_candidates"] = operator_candidates
     filename_site = filename_sites[0] if filename_sites else ""
     explicit_site = text_sites[0] if text_sites else filename_site
     source_sites = set(filename_sites + text_sites)
@@ -202,9 +225,17 @@ def _metadata(filename: str, texts: list[str], context: dict | None = None) -> d
     return metadata
 
 
+def _operator_names(value: str) -> list[str]:
+    return [part.strip() for part in re.split(r"[,，、/／;；|]", value) if part.strip()]
+
+
 def _make_record(values: dict[str, str], location: str, source: str, warnings: list[str]) -> dict:
     warnings.extend(values.pop("_warnings", []))
     site_context_uncertain = bool(values.pop("_site_context_uncertain", False))
+    process_source_evidence = bool(values.pop("_process_source", False))
+    operator_candidates = values.pop("_operator_candidates", [])
+    operator_row_explicit = bool(values.pop("_operator_row_explicit", False))
+    operator_row_conflict = bool(values.pop("_operator_row_conflict", False))
     values = {field: _text(values.get(field, "")) for field in FIELDS}
     if values["sample_date"]:
         raw_date = values["sample_date"]
@@ -219,8 +250,25 @@ def _make_record(values: dict[str, str], location: str, source: str, warnings: l
             values["method"] = method_position.group(1)
         values["point_id"] = method_position.group(2)
         point_operator = re.search(r"操作後\s*([A-Za-z]{2,5})(?=\s|[-（(]|$)", method_position.group(2))
-        if point_operator and not values["operator"]:
-            values["operator"] = point_operator.group(1).upper()
+        point_operator = point_operator.group(1).upper() if point_operator else ""
+        current_operator = values["operator"].strip()
+        candidates = {str(value).strip().upper() for value in operator_candidates}
+        if point_operator:
+            if operator_row_conflict or (current_operator and current_operator.upper() != point_operator):
+                warnings.append(
+                    f"operator: 操作者欄位 {current_operator or '多個來源值'} 與點位原文操作後 "
+                    f"{point_operator} 不一致；留空待核對"
+                )
+                values["operator"] = ""
+            elif (not operator_row_explicit and len(candidates) > 1 and point_operator not in candidates):
+                warnings.append("operator: 點位原文操作者與文件列出的操作者不同；留空待核對")
+                values["operator"] = ""
+            elif not current_operator:
+                values["operator"] = point_operator
+        elif not current_operator and len(candidates) > 1 and not operator_row_explicit:
+            warnings.append("operator: 文件列出多位操作者，沒有明確列／點位對應；留空待核對")
+    if operator_row_conflict:
+        values["operator"] = ""
     values["method"] = normalize_method(values["method"])
     point_room = re.fullmatch(r"([A-Za-z]\d{1,3}[A-Za-z]?|\d{1,3})\s*[:：]\s*(C\d{2}[A-Za-z]?)(?![A-Za-z0-9])(.*)", position, re.I)
     room_point = re.fullmatch(r"(C\d{2}[A-Za-z]?)\s*[:：]\s*([A-Za-z]\d{1,3}[A-Za-z]?|\d{1,3})", position, re.I)
@@ -239,9 +287,14 @@ def _make_record(values: dict[str, str], location: str, source: str, warnings: l
         elif not values["room"]:
             values["room"] = room.upper()
     room_site = _room_site(values["room"])
+    process_source = process_source_evidence or any(
+        word in values["monitoring_type"] for word in ("製程", "製測")
+    )
     if room_site:
         if values["site"] and values["site"] != room_site:
             warnings.append(f"site: 房間 {values['room']} 依規則屬於 {room_site}，與來源廠別 {values['site']} 不同；保留來源廠別待核對")
+        elif not values["site"] and process_source:
+            warnings.append("site: 製程來源未明確提供廠別；不依房間推定，待核對")
         elif not values["site"] and not site_context_uncertain:
             values["site"] = room_site
             warnings.append(f"site: 依房間 {values['room']} 規則補為 {room_site}")
@@ -340,11 +393,26 @@ def _tabular_records(rows: list[list[str]], name: str, metadata: dict[str, str],
             continue
         warnings: list[str] = list(metadata.get("_warnings", []))
         values = dict(metadata)
+        operator_row_explicit = operator_row_conflict = False
         for field, columns in mapping.items():
             if field.startswith("_"):
                 continue
             actual = [(column, row[column] if column < len(row) else "") for column in columns]
             distinct = list(dict.fromkeys(value for _, value in actual if value.strip()))
+            if field == "operator":
+                split_names = [name for value in distinct for name in _operator_names(value)]
+                operator_row_explicit = len(distinct) == 1 and len(split_names) == 1
+                operator_row_conflict = len(distinct) > 1 or len(split_names) > 1
+                if len(split_names) > 1:
+                    warnings.append("operator: 單筆採樣列含多位操作者；保留來源原文並留空待核對")
+            if field == "monitoring_type":
+                for raw_value in distinct:
+                    tokens = _BOX_TOKEN.findall(raw_value)
+                    selected = [label.strip() for mark, label in tokens if mark in _CHECKED_BOXES]
+                    if (tokens and any(word in label for label in selected for word in ("製程", "製測"))) or (
+                        not tokens and any(word in raw_value for word in ("製程", "製測"))
+                    ):
+                        values["_process_source"] = True
             if field == "result_raw" and len(columns) > 1:
                 if sheet and any(_key(header[column]).startswith("總菌數") for column in columns):
                     total_column = next(column for column in columns if _key(header[column]).startswith("總菌數"))
@@ -359,10 +427,16 @@ def _tabular_records(rows: list[list[str]], name: str, metadata: dict[str, str],
                 warnings.append(f"{field}: 多個欄位值互相衝突")
             else:
                 values[field] = distinct[0] if distinct else values.get(field, "")
+                if field in {"method", "monitoring_type"} and _BOX_TOKEN.search(values[field]):
+                    box_warnings = []
+                    values[field] = _selected_box(values[field], field, box_warnings)
+                    warnings.extend(box_warnings)
             if field == "site" and len(distinct) == 1:
                 values[field] = _site_value(distinct[0])
                 if metadata.get("site") and values[field] != metadata["site"]:
                     warnings.append(f"site: 明細廠別 {values[field]} 與檔案／資料夾脈絡 {metadata['site']} 不同；保留明細廠別待核對")
+        values["_operator_row_explicit"] = operator_row_explicit
+        values["_operator_row_conflict"] = operator_row_conflict
         if all(field in mapping for field in ("_year", "_month", "_day")):
             parts = [row[mapping[field][0]] if mapping[field][0] < len(row) else "" for field in ("_year", "_month", "_day")]
             values["sample_date"] = "-".join(parts)
@@ -405,25 +479,19 @@ def _word(filename: str, data: bytes, context: dict | None = None) -> list[dict]
         document = ET.fromstring(xml)
     except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
         raise ValueError("無法讀取有效的 .docx 文件。") from exc
-    texts = ["".join(node.itertext()).strip() for node in document.findall(".//w:body/w:p", NS)]
-    # Metadata in key/value control tables is read only when the following cell is a value.
-    for table in document.findall(".//w:body/w:tbl", NS):
-        for row in table.findall("./w:tr", NS):
-            cells = [_cell_text(cell) for cell in row.findall("./w:tc", NS)]
-            texts.extend(cells)
-            for label, value in zip(cells, cells[1:]):
-                if _header_field(label) in {"sample_date", "site", "method", "room", "operator", "batch_no", "monitoring_type"} and not _header_field(value):
-                    texts.append(label + "：" + value)
-    metadata = _metadata(filename, texts, context)
+    document_texts = ["".join(node.itertext()).strip() for node in document.findall(".//w:body/w:p", NS)]
     records: list[dict] = []
     for table_index, table in enumerate(document.findall(".//w:body/w:tbl", NS), start=1):
         rows: list[list[str]] = []
+        table_texts = list(document_texts)
         previous: dict[int, str] = {}
         for row in table.findall("./w:tr", NS):
             values: list[str] = []
+            row_texts: list[str] = []
             next_previous: dict[int, str] = {}
             for cell in row.findall("./w:tc", NS):
                 text = _cell_text(cell)
+                row_texts.append(text)
                 span_node = cell.find("./w:tcPr/w:gridSpan", NS)
                 span = int(span_node.get(W + "val", "1")) if span_node is not None else 1
                 if not 1 <= span <= 100:
@@ -435,8 +503,13 @@ def _word(filename: str, data: bytes, context: dict | None = None) -> list[dict]
                     if merge is not None:
                         next_previous[len(values)] = text
                     values.append(text)
+            table_texts.extend(row_texts)
+            for label, value in zip(row_texts, row_texts[1:]):
+                if _header_field(label) in {"sample_date", "site", "method", "room", "operator", "batch_no", "monitoring_type"} and not _header_field(value):
+                    table_texts.append(label + "：" + value)
             rows.append(values)
             previous = next_previous
+        metadata = _metadata(filename, table_texts, context)
         try:
             records.extend(_tabular_records(rows, f"Word table {table_index}", metadata, sheet=False))
         except ValueError as exc:

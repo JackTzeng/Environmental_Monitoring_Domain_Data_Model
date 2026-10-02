@@ -1,0 +1,6 @@
+日期,廠別,檢測目的,方法,房間,Grade,點位,操作者,批次,結果,單位,Alert,Action,菌種名稱
+2026-06-19,一廠,環測,落菌法,C06D,A,P-MOLD,QA-MVP,ROUTINE-06,3(1mold),CFU/plate,<5,<10,mold
+2026-06-21,一廠,環測,落菌法,C06D,A,P-ALARM,QA-MVP,ROUTINE-06B,5,CFU/plate,<5,<10,
+2026-07-19,一廠,環測,落菌法,C06D,A,P-MOLD,QA-MVP,ROUTINE-07,10,CFU/plate,<5,<10,
+2026-07-21,一廠,環測,落菌法,C06D,A,P-EXCLUDED,QA-MVP,ROUTINE-X,7,CFU/plate,<5,<10,
+2026-06-19,一廠,環測,落菌法,, ,P-SHEET,QA-MVP,LOT-SHEET,3,CFU/plate,<5,<10,

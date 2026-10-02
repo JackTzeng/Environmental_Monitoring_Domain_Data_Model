@@ -24,6 +24,11 @@
   </section>
 </div>
 <div class="panel">
+  <h2>管理者 Google Sheet 對帳</h2>
+  <p class="muted">比對三廠與一廠的兩個指定分頁；保留原始列與來源證據，先預覽唯一 Word 候選、差異、新 draft 與待核對。只讀取，不回寫 Google Sheet。</p>
+  <p><a class="button secondary" href="{{url_for('sheet_reconcile_page')}}">開啟 Sheet 核對／補資料</a></p>
+</div>
+<div class="panel">
   <h2>選取檔案</h2>
   <p class="muted">也可沿用多檔上傳；此方式每次合計最多 25 MB。檔案只傳到本機程式。</p>
   <form method="post" action="{{url_for('import_files')}}" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{session.csrf}}">
@@ -40,7 +45,7 @@
 </div>
 <p class="muted">目前 {{count}} 筆紀錄。資料庫及原檔副本存於 <code>{{data_dir}}</code>。每次寫入前會建立 SQLite 備份。</p>
 <h2>已匯入來源與重新解析</h2><p class="muted">重新解析會先備份；只更新未人工更改、未核對的草稿欄位，保留原始辨認值並記錄差異。已確認或人工修正資料不會被覆蓋。</p>
-{% if stale_source_count %}<div class="panel"><p>有 {{stale_source_count}} 個來源尚未使用目前 parser。批次功能會逐來源重讀已保存副本、呼叫既有保護式重新解析，並列出成功、略過、待核對差異與失敗；失敗來源不會中止其他來源。</p><form method="post" action="{{url_for('reparse_batch')}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">批次重新解析 {{stale_source_count}} 個舊來源</button></form></div>{% endif %}
+{% if stale_source_count %}<div class="panel"><p>有 {{stale_source_count}} 個來源尚未使用目前 parser。批次功能會逐來源重讀已保存副本、呼叫既有保護式重新解析，並列出成功、略過、待核對差異與失敗；失敗來源不會中止其他來源。</p><form method="post" action="{{url_for('reparse_batch')}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">批次重新解析 {{stale_source_count}} 個舊來源</button></form><p>若只處理製程分類修正，可讓 parser 重讀舊來源並依實際勾選結果挑出「製程監測＋人員監測」的明確組合；每個命中來源仍走既有來源 SHA、版本、人工修改與核對保護。</p><form method="post" action="{{url_for('reparse_process_batch')}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">重新盤點並批次更新明確製程＋人員勾選來源</button></form></div>{% endif %}
 <div class="panel scroll"><table><thead><tr><th>來源</th><th>明細</th><th>來源首次匯入解析版本</th><th>來源目前解析版本</th><th>廠別脈絡</th><th>操作</th></tr></thead><tbody>
 {% for source in sources %}<tr><td><a href="{{url_for('source',source_id=source.id)}}">{{source.name}}</a></td><td>{{source.record_count}}</td><td>{{source.parser_version}}</td><td>{{source.latest_parser_version or source.parser_version}}</td><td>{{source.context_site or '未指定'}}</td><td>{% if source.latest_parser_version != version %}<form method="post" action="{{url_for('reparse',source_id=source.id)}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">重新解析</button></form>{% else %}已是最新{% endif %}</td></tr>{% else %}<tr><td colspan="6">尚無匯入來源。</td></tr>{% endfor %}</tbody></table></div>
 <h2>最近匯入紀錄</h2><div class="panel scroll"><table><thead><tr><th>時間（UTC）</th><th>檔案</th><th>結果</th></tr></thead><tbody>{% for entry in imports %}<tr><td>{{entry.created_at}}</td><td>{{entry.filename}}</td><td>{{entry.detail}}</td></tr>{% else %}<tr><td colspan="3">尚無匯入。</td></tr>{% endfor %}</tbody></table></div>

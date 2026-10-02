@@ -1,4 +1,8 @@
-{% extends 'base.html' %}{% block main_class %}{% if view == 'matrix' %}matrix-page{% endif %}{% endblock %}{% block body %}
+{% extends 'base.html' %}{% block main_class %}{% if view in ('matrix', 'process') %}matrix-page{% endif %}{% endblock %}{% block body %}
+{% macro current_result(r) -%}
+{% set count=r.current.get('cfu_count') %}目前 CFU：{% if count is not none and count != '' %}{{count}}{% else %}未提供{% endif %} <span class="tag">{{r.current.get('result_type') or '未辨認'}}</span><br>
+結果原文（目前值）：{{r.current.get('result_raw') or '缺值'}}
+{%- endmacro %}
 {% if view == 'month' %}
 <h1>{{year}} 年 {{'%02d'|format(month)}} 月採樣明細</h1>
 <p class="muted">{{point_label}} · 共 {{rows|length}} 筆。依採樣日期列出當月全部資料；點紀錄可查看原始辨認值、人工修正與歷程。</p>
@@ -6,32 +10,78 @@
 <div class="panel scroll"><table><thead><tr><th>採樣日期</th><th>目前結果</th><th>原始辨認值</th><th>Grade</th><th>Alarm Lv 原文</th><th>Action Lv 原文</th><th>核對狀態</th><th>資料狀態</th><th>來源</th><th>提醒</th></tr></thead><tbody>
 {% for r in rows %}<tr>
   <td>{{r.current.sample_date}}</td>
-  <td>{{r.current.result_raw or r.current.cfu_count or '缺值'}} <span class="tag">{{r.current.result_type}}</span></td>
+  <td>{{current_result(r)}}</td>
   <td>{{r.original.result_raw or r.original.cfu_count or '缺值'}}</td>
   <td>{{r.current.grade or '未填'}}</td><td>{{r.current.alert_raw or '未填'}}</td><td>{{r.current.action_raw or '未填'}}</td>
   <td>{% if r.verified %}{% for field,status in r.verified.items() %}{{labels[field]}}：{{'已核對' if status=='checked' else '不適用'}}{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}待核對{% endif %}</td>
-  <td>{{{'draft':'待核對','confirmed':'已確認','void':'作廢'}[r.state]}}</td>
+  <td>{{{'draft':'待核對','confirmed':'已確認','void':'作廢'}[r.state]}}<br>{{'納入分析' if r.analysis_included else '已排除分析'}}</td>
   <td>{% if r.source_id %}<a href="{{url_for('source', source_id=r.source_id)}}">{{r.source_name}}</a><br>{% endif %}<span class="original">{{r.source_location}}</span></td>
-  <td><a href="{{url_for('edit', record_id=r.id)}}">#{{r.id}} 檢視／修正</a><br>{{r.warnings|join('；')}}</td>
+  <td><a href="{{url_for('edit', record_id=r.id)}}">#{{r.id}} 檢視／修正／排除或恢復</a><br>{{r.warnings|join('；')}}</td>
 </tr>{% else %}<tr><td colspan="10">此點位本月沒有符合目前篩選條件的資料。</td></tr>{% endfor %}
 </tbody></table></div>
+
+{% elif view == 'process-person-month' %}
+<h1>CRR 人日來源明細</h1><p class="muted">{{site}}／{{operator}}／{{month}} · 目前期間 {{start}} 至 {{end}}。明細只包含此月份實際參與或待核的人日及來源。</p>
+<p><a class="button secondary" href="{{url_for('database',view='process',start=start,end=end,site=return_site)}}">返回製程矩陣</a></p>
+<h2>參與／待核人日</h2><div class="panel scroll"><table><thead><tr><th>日期</th><th>方法</th><th>狀態</th><th>A／B</th><th>採樣列</th></tr></thead><tbody>
+{% for d in days %}<tr><td>{{d.day}}</td><td>{{d.methods|join('、')}}</td><td>{{d.status}}{% if d.draft %} · 含草稿{% endif %}</td><td>{% if d.noncomparable %}待核對／不計分母{% else %}{{1 if d.positive else 0}}／1{% endif %}</td><td>{{d.record_ids|length}}</td></tr>
+{% else %}<tr><td colspan="5">此月份沒有該人員的參與或待核人日。</td></tr>{% endfor %}</tbody></table></div>
+<h2>採樣列與來源</h2><div class="panel scroll"><table><thead><tr><th>紀錄</th><th>採樣日</th><th>方法／房間／點位／單位</th><th>操作者／Grade</th><th>目前結果</th><th>核對狀態</th><th>來源</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><a href="{{url_for('edit',record_id=r.id)}}">#{{r.id}} 檢視／修正</a></td><td>{{r.current.sample_date}}</td><td>{{r.current.method}}／{{r.current.room}}／{{r.current.point_id}}／{{r.current.unit}}</td><td>{{r.current.operator}}／{{r.current.grade}}</td><td>{{current_result(r)}}</td><td>{{'已確認' if r.state=='confirmed' else '待核對'}}</td><td>{% if r.source_id %}<a href="{{url_for('source',source_id=r.source_id)}}">{{r.source_name}}</a>{% else %}人工新增{% endif %}<br><span class="original">{{r.source_location}}</span></td></tr>
+{% else %}<tr><td colspan="7">此月份沒有該人員的採樣來源。</td></tr>{% endfor %}</tbody></table></div>
+{% elif view == 'process-day' or view == 'process-samples' %}
+{% if view == 'process-day' %}<h1>人員 CRR 人日明細</h1><p class="muted">{{site}}／{{operator}}／{{day}} · 同日落菌與接觸紀錄合併為一個人日。</p>
+{% else %}<h1>製程採樣月格明細</h1><p class="muted">{{month}} · {{site}}／{{method}}／{{room}}／{{grade}}／{{point_id}}／{{unit}} · 共 {{rows|length}} 筆。</p>{% endif %}
+<p><a class="button secondary" href="{{url_for('database',view='process',start=start,end=end,site=return_site)}}">返回製程矩陣</a></p>
+<div class="panel scroll"><table><thead><tr><th>紀錄</th><th>採樣日</th><th>類型／方法／點位</th><th>Grade／操作者</th><th>目前結果</th><th>分析範圍</th><th>狀態</th><th>來源／來源位置</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><a href="{{url_for('edit',record_id=r.id)}}">#{{r.id}} 檢視／修正</a></td><td>{{r.current.sample_date}}</td><td>{{r.current.monitoring_type}}<br>{{r.current.method}}<br>{{r.current.room}}／{{r.current.point_id}}</td><td>{{r.current.grade}}／{{r.current.operator}}</td><td>{{current_result(r)}}</td><td>{{'納入' if r.analysis_included else '已排除：' ~ r.analysis_exclusion_reason}}</td><td>{{{'draft':'待核對','confirmed':'已確認','void':'作廢'}[r.state]}}</td><td>{% if r.source_id %}<a href="{{url_for('source',source_id=r.source_id)}}">{{r.source_name}}</a>{% else %}人工新增{% endif %}<br><span class="original">{{r.source_location}}</span></td></tr>
+{% else %}<tr><td colspan="8">沒有符合條件的採樣。</td></tr>{% endfor %}
+</tbody></table></div>
+
+{% elif view == 'excluded' %}
+<h1>已排除於業務分析</h1><p class="muted">原始資料、狀態與來源仍保留；排除只影響環測矩陣、製程矩陣、CRR 與業務月報。可逐筆恢復納入。</p>
+<div class="controls"><a class="button secondary" href="{{url_for('database',view='detail',state=state)}}">原始明細</a><a class="button" href="{{url_for('database')}}">逐月矩陣</a></div>
+<p class="muted">{{total}} 筆 · 第 {{page}} 頁（每頁最多 100 筆）。</p>
+<div class="panel scroll"><table><thead><tr><th>紀錄／版本</th><th>狀態</th><th>日期／廠別</th><th>類型／方法／點位</th><th>目前結果</th><th>排除原因</th><th>來源</th><th>恢復操作</th></tr></thead><tbody>
+{% for r in rows %}<tr><td><a href="{{url_for('edit',record_id=r.id)}}">#{{r.id}} · v{{r.version}}</a></td><td>{{{'draft':'待核對','confirmed':'已確認','void':'作廢'}[r.state]}}</td><td>{{r.current.sample_date or '未讀出'}}<br>{{r.current.site or '廠別待補'}}</td><td>{{r.current.monitoring_type}}<br>{{r.current.method}}<br>{{r.current.room}}／{{r.current.point_id}}</td><td>{{current_result(r)}}</td><td>{{r.analysis_exclusion_reason}}</td><td>{% if r.source_id %}<a href="{{url_for('source',source_id=r.source_id)}}">{{r.source_name}}</a><br>{% endif %}<span class="original">{{r.source_location}}</span></td><td><form method="post" action="{{url_for('analysis_inclusion',record_id=r.id)}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="record_version" value="{{r.version}}"><input type="hidden" name="included" value="1"><label>恢復原因<input name="reason" maxlength="120" required placeholder="恢復納入原因"></label><button>恢復納入</button></form></td></tr>
+{% else %}<tr><td colspan="8">目前沒有符合篩選的已排除紀錄。</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="controls">{% if page>1 %}<a href="{{url_for('database',view='excluded',page=page-1,state=state)}}">上一頁</a>{% endif %}{% if page*100<total %}<a href="{{url_for('database',view='excluded',page=page+1,state=state)}}">下一頁</a>{% endif %}</div>
+
+{% elif view == 'process' %}
+<h1>製程月度採樣與人員 CRR</h1>
+<p class="notice">資料庫草稿預覽可包含待核對紀錄，正式月報僅使用已確認紀錄。未明廠別、人員、日期或來源衝突留在待補清單；Isolator 來源列 TRUE 尚無定義，因此不計入設備統計。分析排除旗標獨立於 draft／confirmed／void。選廠時，其他明確廠別會隱藏；廠別未知的待核與 Isolator 候選仍以「廠別待補」單列，不分派到所選廠的統計或排除數。</p>
+<form method="get" class="controls process-controls"><input type="hidden" name="view" value="process"><label>起月<input type="month" name="start" value="{{start}}"></label><label>迄月<input type="month" name="end" value="{{end}}"></label><label>廠別<select name="site"><option value="">全部</option>{% for s in sites %}<option value="{{s}}" {% if site==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select></label><button>更新製程矩陣</button><a class="button secondary" href="{{url_for('database',view='detail')}}">原始明細</a><a class="button secondary" href="{{url_for('database',view='excluded')}}">已排除清單</a></form>
+<p class="muted">期間 {{start}} 至 {{end}} · 製程類別納入分析 {{process_count}} 筆（全庫）· 本範圍已排除 {{analysis_excluded}} 筆。</p>
+<h2>製程採樣矩陣：Grade A 落菌／培養皿接觸</h2><p class="muted">按廠別、方法、房間、實際點位及單位分組。月格為 CFU 加總／採樣筆數；特殊或缺值不轉成 0，列於不可加總數。草稿數另標。</p>
+<div class="panel matrix-panel process-sampling-panel"><div class="matrix-top-scroll" role="region" aria-label="製程採樣矩陣上方水平捲動條" tabindex="0"><div class="matrix-top-scroll-inner"></div></div><div class="matrix-table-scroll scroll"><table class="matrix-table"><thead><tr><th>廠別／方法／房間／Grade／點位／單位</th>{% for m in months %}<th colspan="3">{{m}}</th>{% endfor %}<th>期間合計<br>CFU／採樣數</th></tr><tr><th></th>{% for m in months %}<th>CFU</th><th>筆數</th><th>不可加總</th>{% endfor %}<th></th></tr></thead><tbody>
+{% for r in process.sampling_rows %}<tr><th>{{r.site}}／{{r.method}}／{{r.room or '房間待補'}}／{{r.grade}}／{{r.point_id}}／{{r.unit}}</th>{% set ns=namespace(total=0,numeric=0,count=0) %}{% for m in months %}{% set c=r.months.get(m) %}<td class="number">{% if c and c.numeric_count %}{{c.cfu_sum}}{% else %}—{% endif %}</td><td class="number">{% if c %}<a href="{{url_for('database',view='process-samples',month=m,site=r.site,method=r.method,room=r.room,grade=r.grade,point_id=r.point_id,unit=r.unit,start=start,end=end,return_site=site)}}">{{c.sample_count}}</a>{% else %}—{% endif %}{% if c and c.draft_count %}<span class="tag">草稿 {{c.draft_count}}</span>{% endif %}</td><td class="number">{{c.non_addable if c else '—'}}</td>{% if c %}{% set ns.total=ns.total+c.cfu_sum %}{% set ns.numeric=ns.numeric+c.numeric_count %}{% set ns.count=ns.count+c.sample_count %}{% endif %}{% endfor %}<td class="number">{{ns.total if ns.numeric else '—'}}／{{ns.count}}</td></tr>
+{% else %}<tr><td colspan="{{months|length*3+2}}">此期間沒有符合條件的可分組樣本。</td></tr>{% endfor %}</tbody></table></div></div>
+<h3>方法小計</h3><div class="panel scroll"><table><thead><tr><th>廠別／方法／單位</th>{% for m in months %}<th> {{m}} CFU／筆數／不可加總</th>{% endfor %}<th>期間 CFU／筆數／不可加總</th></tr></thead><tbody>{% for r in process.method_totals %}<tr><th>{{r.site}}／{{r.method}}／{{r.unit}}</th>{% set ns=namespace(total=0,numeric=0,count=0,bad=0) %}{% for m in months %}{% set c=r.months.get(m) %}<td class="number">{% if c %}{% if c.numeric_count %}{{c.cfu_sum}}{% else %}—{% endif %}／{{c.sample_count}}／{{c.non_addable}}{% set ns.total=ns.total+c.cfu_sum %}{% set ns.numeric=ns.numeric+c.numeric_count %}{% set ns.count=ns.count+c.sample_count %}{% set ns.bad=ns.bad+c.non_addable %}{% else %}—{% endif %}</td>{% endfor %}<td class="number">{{ns.total if ns.numeric else '—'}}／{{ns.count}}／{{ns.bad}}</td></tr>{% else %}<tr><td colspan="{{months|length+2}}">尚無方法小計。</td></tr>{% endfor %}</tbody></table></div>
+<h3>期間合計</h3><div class="panel scroll"><table><thead><tr><th>廠別／單位</th><th>CFU 加總</th><th>採樣筆數</th><th>不可加總</th></tr></thead><tbody>{% for r in process.period_totals %}<tr><th>{{r.site}}／{{r.unit}}</th><td>{{r.cfu_sum if r.numeric_count else '—'}}</td><td>{{r.sample_count}}</td><td>{{r.non_addable}}</td></tr>{% else %}<tr><td colspan="4">尚無期間資料。</td></tr>{% endfor %}</tbody></table></div>
+<h2>人員 CRR：同廠／同人／同實際日合併落菌與接觸</h2><p class="muted">任一有效 Grade A CFU&gt;0 計一次陽性 A。不可比較結果的人日排除於 A／B 並明列。B=0 顯示「—」。</p>
+<div class="panel matrix-panel process-crr-panel"><div class="matrix-top-scroll" role="region" aria-label="製程 CRR 矩陣上方水平捲動條" tabindex="0"><div class="matrix-top-scroll-inner"></div></div><div class="matrix-table-scroll scroll"><table class="matrix-table"><thead><tr><th>廠別／操作者</th>{% for m in months %}<th colspan="4">{{m}}</th>{% endfor %}<th colspan="4">期間合計</th></tr><tr><th></th>{% for m in months %}<th>A</th><th>B</th><th>CRR%</th><th>排除</th>{% endfor %}<th>A</th><th>B</th><th>CRR%</th><th>排除</th></tr></thead><tbody>{% for r in process.crr_rows %}<tr><th>{{r.site}}／{{r.operator}}</th>{% for m in months %}{% set c=r.months.get(m) %}{% set drill=url_for('database',view='process-person-month',month=m,site=r.site,operator=r.operator,start=start,end=end,return_site=site) %}<td class="number">{% if c %}<a href="{{drill}}">{{c.positive_days}}</a>{% else %}—{% endif %}</td><td class="number">{% if c %}<a href="{{drill}}">{{c.total_days}}</a>{% else %}—{% endif %}</td><td class="number">{% if c %}<a href="{{drill}}">{{'%.1f'|format(c.crr) if c.crr is not none else '—'}}</a>{% else %}—{% endif %}</td><td class="number">{% if c %}<a href="{{drill}}">{{c.excluded_days}}</a>{% else %}—{% endif %}</td>{% endfor %}<td>{{r.total.positive_days}}</td><td>{{r.total.total_days}}</td><td>{{'%.1f'|format(r.total.crr) if r.total.crr is not none else '—'}}</td><td>{{r.total.excluded_days}}</td></tr>{% else %}<tr><td colspan="{{months|length*4+5}}">尚無可計算的人員人日。</td></tr>{% endfor %}<tr class="matrix-group"><th>全廠／所選範圍摘要</th>{% for m in months %}{% set c=process.crr_month_totals[m] %}<td>{{c.positive_days}}</td><td>{{c.total_days}}</td><td>{{'%.1f'|format(c.crr) if c.crr is not none else '—'}}</td><td>{{c.excluded_days}}</td>{% endfor %}<td>{{process.crr_month_totals.values()|sum(attribute='positive_days')}}</td><td>{{process.crr_month_totals.values()|sum(attribute='total_days')}}</td><td>{% set a=process.crr_month_totals.values()|sum(attribute='positive_days') %}{% set b=process.crr_month_totals.values()|sum(attribute='total_days') %}{{'%.1f'|format(100*a/b) if b else '—'}}</td><td>{{process.crr_month_totals.values()|sum(attribute='excluded_days')}}</td></tr></tbody></table></div></div>
+<h3>可追溯人日與來源</h3><div class="panel scroll"><table><thead><tr><th>人廠／日期</th><th>方法</th><th>狀態</th><th>採樣列</th></tr></thead><tbody>{% for d in process.person_days %}<tr><td><a href="{{url_for('database',view='process-day',day=d.day,site=d.site,operator=d.operator,start=start,end=end,return_site=site)}}">{{d.site}}／{{d.operator}}／{{d.day}}</a></td><td>{{d.methods|join('、')}}</td><td>{{d.status}}{% if d.draft %} · 含草稿{% endif %}</td><td>{{d.record_ids|length}}</td></tr>{% else %}<tr><td colspan="4">尚無人日。</td></tr>{% endfor %}</tbody></table></div>
+<h2>Isolator 設備採樣待核對</h2><p class="notice">待確認來源列 TRUE 的欄位定義；符合資格前設備統計納入筆數為 0，以下候選逐筆保留來源追溯（{{process.isolator_pending|length}} 筆）。</p><h3>點位／方法分組（待納入筆數）</h3><div class="panel scroll"><table><thead><tr><th>廠別／月份／方法</th><th>Grade／房間／點位／單位</th><th>待核對筆數</th></tr></thead><tbody>{% for g in process.isolator_groups %}<tr><td>{{g.site or '廠別待補'}}／{{g.month or '月份待補'}}／{{g.method}}</td><td>{{g.grade}}／{{g.room}}／{{g.point_id}}／{{g.unit}}</td><td>{{g.pending_count}}</td></tr>{% else %}<tr><td colspan="3">目前無 Isolator 分組候選。</td></tr>{% endfor %}</tbody></table></div><div class="panel scroll"><table><thead><tr><th>來源／位置</th><th>廠別／方法／房間／點位</th><th>Grade／結果</th><th>操作</th></tr></thead><tbody>{% for i in process.isolator_pending %}{% set r=i.record %}<tr><td>{% if r.source_id %}<a href="{{url_for('source',source_id=r.source_id)}}">{{r.source_name}}</a>{% else %}人工新增{% endif %}<br>{{r.source_location}}</td><td>{{i.site or '廠別待補'}}／{{i.method}}／{{i.room}}／{{i.point_id}}</td><td>{{r.current.grade}}<br>{{current_result(r)}}</td><td><a href="{{url_for('edit',record_id=r.id)}}">#{{r.id}} 檢視／補核</a></td></tr>{% else %}<tr><td colspan="4">目前無 Isolator 候選。</td></tr>{% endfor %}</tbody></table></div>
+<h2>待補資料／來源衝突</h2><p class="muted">不推定廠別、人員、方法、點位或實際日期；此處候選不進入採樣合計與 CRR。</p><div class="panel scroll"><table><thead><tr><th>紀錄／日期</th><th>待補原因</th><th>目前值</th><th>來源</th></tr></thead><tbody>{% for i in process.pending %}{% set r=i.record %}<tr><td><a href="{{url_for('edit',record_id=r.id)}}">#{{r.id}}</a><br>{{i.month or '日期待補'}}</td><td>{{i.reason}}</td><td>{{r.current.site or '廠別待補'}}／{{r.current.operator or '人員待補'}}／{{r.current.method}}／{{r.current.point_id or '點位待補'}}<br>{{current_result(r)}}</td><td>{% if r.source_id %}<a href="{{url_for('source',source_id=r.source_id)}}">{{r.source_name}}</a><br>{% endif %}<span class="original">{{r.source_location}}</span></td></tr>{% else %}<tr><td colspan="4">此範圍沒有待補候選。</td></tr>{% endfor %}</tbody></table></div>
 
 {% elif view == 'detail' %}
 <h1>原始明細</h1>
 <div class="controls"><form method="get"><input type="hidden" name="view" value="detail"><label for="state">狀態</label><select name="state" id="state"><option value="">全部非作廢</option>{% for s,l in [('draft','待核對'),('confirmed','已確認'),('void','作廢')] %}<option value="{{s}}" {% if state==s %}selected{% endif %}>{{l}}</option>{% endfor %}</select> <button>篩選</button></form>
 <a class="button secondary" href="{{url_for('records_csv')}}">匯出明細 CSV</a><a class="button" href="{{url_for('database')}}">逐月矩陣</a></div>
-<p class="muted">{{total}} 筆 · 第 {{page}} 頁（每頁最多 100 筆）。</p>
-<div class="panel scroll"><table><thead><tr><th>紀錄</th><th>狀態</th><th>日期／廠別</th><th>類型／方法／房間／Grade／點位／單位</th><th>目前結果</th><th>原始辨認值</th><th>來源</th><th>提醒</th></tr></thead><tbody>
+<p class="muted">{{total}} 筆 · 第 {{page}} 頁（每頁最多 100 筆）。逐筆提供排除或恢復入口；分析範圍不影響核對狀態。</p>
+<div class="panel scroll"><table><thead><tr><th>紀錄</th><th>狀態／分析</th><th>日期／廠別</th><th>類型／方法／房間／Grade／點位／單位</th><th>目前結果</th><th>原始辨認值</th><th>來源</th><th>提醒</th><th>分析操作</th></tr></thead><tbody>
 {% for r in rows %}<tr>
   <td><a href="{{url_for('edit',record_id=r.id)}}">#{{r.id}} 檢視／修正</a></td>
-  <td>{{{'draft':'待核對','confirmed':'已確認','void':'作廢'}[r.state]}}</td>
+  <td>{{{'draft':'待核對','confirmed':'已確認','void':'作廢'}[r.state]}}<br>{% if r.analysis_included %}<span class="tag">納入分析</span>{% else %}<span class="tag">已排除</span><br>{{r.analysis_exclusion_reason}}{% endif %}</td>
   <td>{{r.current.sample_date or '未讀出'}}<br>{{r.current.site}}</td>
   <td>{{r.current.monitoring_type}}<br>{{r.current.method}}<br>{{r.current.room}}／{{r.current.grade}}／{{r.current.point_id}}／{{r.current.unit}}</td>
-  <td>{{r.current.result_raw or r.current.cfu_count or '缺值'}} <span class="tag">{{r.current.result_type}}</span></td>
+  <td>{{current_result(r)}}</td>
   <td>{{r.original.result_raw or r.original.cfu_count or '缺值'}}</td>
   <td>{% if r.source_id %}<a href="{{url_for('source',source_id=r.source_id)}}">{{r.source_name}}</a><br>{% else %}人工新增<br>{% endif %}<span class="original">{{r.source_location}}</span></td>
   <td>{{r.warnings|join('；')}}</td>
-</tr>{% else %}<tr><td colspan="8">尚無資料。從「輸入」選取來源檔案。</td></tr>{% endfor %}
+  <td><a href="{{url_for('edit',record_id=r.id)}}">逐筆檢視／修正</a></td>
+</tr>{% else %}<tr><td colspan="9">尚無資料。從「輸入」選取來源檔案。</td></tr>{% endfor %}
 </tbody></table></div>
 <div class="controls">{% if page>1 %}<a href="{{url_for('database',view='detail',page=page-1,state=state)}}">上一頁</a>{% endif %}{% if page*100<total %}<a href="{{url_for('database',view='detail',page=page+1,state=state)}}">下一頁</a>{% endif %}</div>
 
@@ -48,9 +98,11 @@
   <label>核對狀態<select name="state"><option value="" {% if not state %}selected{% endif %}>全部非作廢</option><option value="draft" {% if state=='draft' %}selected{% endif %}>待核對</option><option value="confirmed" {% if state=='confirmed' %}selected{% endif %}>已確認</option><option value="void" {% if state=='void' %}selected{% endif %}>作廢</option></select></label>
   <button>更新矩陣</button>
   <a class="button secondary" href="{{url_for('database',view='detail',state=state)}}">原始明細</a>
+  <a class="button secondary" href="{{url_for('database',view='process')}}">製程採樣／CRR</a>
+  <a class="button secondary" href="{{url_for('database',view='excluded')}}">已排除清單</a>
   <a class="button secondary" href="{{url_for('records_csv')}}">匯出 CSV</a>
 </form>
-<p class="muted">{{year}} 年符合條件的明細 {{total}} 筆；矩陣 {{matrix|length}} 組。趨勢圖僅連接最早日可計數的 CFU；特殊值、無採樣與最早日衝突不畫成數值。{% if undated_count %}另有 {{undated_count}} 筆日期空缺或格式錯誤，無法放入月份。{% endif %}</p>
+<p class="muted">{{year}} 年符合條件的明細 {{total}} 筆；其中 {{analysis_excluded}} 筆已排除分析，不計入矩陣及趨勢；矩陣 {{matrix|length}} 組。趨勢圖僅連接最早日可計數的 CFU；特殊值、無採樣與最早日衝突不畫成數值。{% if undated_count %}另有 {{undated_count}} 筆日期空缺或格式錯誤，無法放入月份。{% endif %}</p>
 <div class="panel matrix-panel">
 <div class="matrix-top-scroll" role="region" aria-label="矩陣上方水平捲動條" tabindex="0"><div class="matrix-top-scroll-inner"></div></div>
 <div class="matrix-table-scroll scroll"><table class="matrix-table"><thead><tr><th>房間－點位</th><th>Grade</th><th>Alarm Lv 全年原文</th><th>Action Lv 全年原文</th>{% for month in range(1,13) %}<th>{{'%02d'|format(month)}}月</th>{% endfor %}<th>點位趨勢圖</th></tr></thead><tbody>
@@ -79,28 +131,28 @@
 {% else %}<tr><td colspan="17">此年度尚無符合條件的資料。</td></tr>{% endfor %}
 </tbody></table></div>
 </div>
+{% endif %}
 <script>
 (() => {
-  const panel = document.querySelector('.matrix-panel');
-  const top = panel?.querySelector('.matrix-top-scroll');
-  const bottom = panel?.querySelector('.matrix-table-scroll');
-  const table = panel?.querySelector('.matrix-table');
-  const inner = panel?.querySelector('.matrix-top-scroll-inner');
-  if (!top || !bottom || !table || !inner) return;
-  const sync = (source, target) => {
-    if (target.scrollLeft !== source.scrollLeft) target.scrollLeft = source.scrollLeft;
-  };
-  const resize = () => {
-    inner.style.width = `${bottom.scrollWidth}px`;
-    top.hidden = bottom.scrollWidth <= bottom.clientWidth + 1;
-    sync(bottom, top);
-  };
-  top.addEventListener('scroll', () => sync(top, bottom), {passive: true});
-  bottom.addEventListener('scroll', () => sync(bottom, top), {passive: true});
-  new ResizeObserver(resize).observe(bottom);
-  window.addEventListener('resize', resize, {passive: true});
-  resize();
+  for (const panel of document.querySelectorAll('.matrix-panel')) {
+    const top = panel.querySelector('.matrix-top-scroll');
+    const bottom = panel.querySelector('.matrix-table-scroll');
+    const inner = panel.querySelector('.matrix-top-scroll-inner');
+    if (!top || !bottom || !inner) continue;
+    const sync = (source, target) => {
+      if (target.scrollLeft !== source.scrollLeft) target.scrollLeft = source.scrollLeft;
+    };
+    const resize = () => {
+      inner.style.width = `${bottom.scrollWidth}px`;
+      top.hidden = bottom.scrollWidth <= bottom.clientWidth + 1;
+      sync(bottom, top);
+    };
+    top.addEventListener('scroll', () => sync(top, bottom), {passive: true});
+    bottom.addEventListener('scroll', () => sync(bottom, top), {passive: true});
+    new ResizeObserver(resize).observe(bottom);
+    window.addEventListener('resize', resize, {passive: true});
+    resize();
+  }
 })();
 </script>
-{% endif %}
 {% endblock %}

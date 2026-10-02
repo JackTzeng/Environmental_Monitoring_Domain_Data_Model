@@ -1,0 +1,79 @@
+{% extends 'base.html' %}{% block body %}
+<h1>管理者 Google Sheet 核對</h1>
+<p class="muted">只讀「三廠管理者更新」與「一廠管理者更新」。原始列及菌鑑子列留在本機 SQLite；不回寫 Sheet。補值只寫入仍空白、未被人工修改或核對的欄位；新樣本只新增 draft。</p>
+
+<div class="panel">
+  <h2>Google 唯讀連線</h2>
+  {% if oauth.authorized %}
+  <p>本機唯讀 OAuth 已設定。權杖留在目前資料目錄，僅呼叫指定 Sheet 的 metadata 與兩個指定分頁值範圍。</p>
+  <form method="post" action="{{url_for('sheet_reconcile_google_read')}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button>讀取兩個指定分頁</button></form>
+  {% elif oauth.configured %}
+  <p>已設定本機 OAuth 用戶端，尚未完成授權。</p>
+  {% else %}
+  <p>目前沒有本機 OAuth 用戶端設定。先在本機環境設定 <code>EM_MVP_GOOGLE_CLIENT_ID</code> 與 <code>EM_MVP_GOOGLE_CLIENT_SECRET</code>；不會讀取 Codex 連接器憑證，也不會將用戶端或權杖寫入 Git。</p>
+  {% endif %}
+  {% if oauth.configured and not oauth.authorized %}
+  <form method="post" action="{{url_for('sheet_reconcile_oauth_start')}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><button class="secondary">連接 Google Sheet（唯讀）</button></form>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>兩分頁 XLSX 快照</h2>
+  <p>匯出檔必須同時包含兩個指定分頁；adapter 僅讀這兩張，工作簿內其他分頁不開啟內容。若此檔是完整兩分頁快照，勾選完整快照；未勾選仍可預覽數值，但不能以 N 空白推定零。</p>
+  <form method="post" action="{{url_for('sheet_reconcile_upload')}}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{session.csrf}}">
+    <label for="sheet-xlsx">管理者更新 XLSX</label><input id="sheet-xlsx" name="xlsx" type="file" accept=".xlsx" required>
+    <label><input type="checkbox" name="complete_snapshot" value="yes"> 我確認檔案是三廠與一廠兩個指定分頁的完整快照</label>
+    <button class="secondary">唯讀比對 XLSX</button>
+  </form>
+</div>
+
+{% if snapshots %}
+<div class="panel">
+  <h2>已讀快照</h2>
+  <ul>{% for item in snapshots %}<li><a href="{{url_for('sheet_reconcile_page',snapshot=item.id)}}">#{{item.id}} · {{item.source_name}} · {{item.created_at}} · {{item.source_kind}} · {{'完整' if item.complete else '完整性未確認'}}</a></li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if snapshot %}
+<div class="panel">
+  <h2>對照摘要</h2>
+  <p>快照 #{{snapshot.id}} · {{snapshot.source_name}} · SHA-256 <code>{{snapshot.sha256}}</code></p>
+  {% if not is_latest %}<p class="warning">已有較新的 Sheet 讀取。此舊預覽不能採用或補值，請<a href="{{url_for('sheet_reconcile_page',snapshot=snapshots[0].id)}}">開啟最新讀取</a>後重新檢視。</p>{% endif %}
+  <p>完整性：{{'已確認' if summary.complete else '未確認'}} · 原始列 {{summary.source_rows}} · 採樣候選群 {{summary.sample_groups}} · 菌鑑子列 {{summary.species_child_rows}}</p>
+  <p>Word 一致 {{summary.matched}} · 可補空欄 {{summary.supplement}} · 衝突 {{summary.conflict}} · 新 draft {{summary.new}} · 待核對 {{summary.pending}} · 已採用 {{summary.already_adopted}} · 較早完整快照未再出現 {{missing_groups|length}}</p>
+  {% if summary.supplement and is_latest %}
+  <form method="post" action="{{url_for('sheet_reconcile_supplement')}}">
+    <input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="snapshot_id" value="{{snapshot.id}}">
+    {% for group in groups if group.status == 'supplement' %}<input type="hidden" name="candidate" value="{{group.fingerprint}}|{{group.word_record_id}}|{{group.word_version}}">{% endfor %}
+    <button>一次採用全部安全空欄補值（{{summary.supplement}} 筆候選）</button>
+  </form>
+  {% endif %}
+</div>
+{% if missing_groups %}
+<div class="panel"><h2>較早快照未見的採樣（僅提示）</h2><p>來源紀錄與現有 Word 不自動刪除或作廢；請人工核對管理者 Sheet 的刪列／更正情況。</p>
+  <ul>{% for group in missing_groups %}<li>{{group.identity.site}} · {{group.identity.sample_date}} · {{group.identity.method}} · {{group.identity.point_id}} · B={{group.identity.batch_id}}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="panel scroll">
+  <table><thead><tr><th>廠別／日期／B</th><th>方法／點位／Grade</th><th>總 CFU 候選</th><th>Word 對照</th><th>處理狀態</th><th>原因／操作</th><th>來源列證據</th></tr></thead><tbody>
+  {% for group in groups %}
+    <tr>
+      <td>{{group.identity.site}}<br>{{group.identity.sample_date or '日期待核'}}<br>B={{group.identity.batch_id or '空白'}}</td>
+      <td>{{group.identity.method or '方法待核'}}<br>{{group.identity.point_id or '點位待核'}}<br>Grade {{group.identity.grade or '空白'}}</td>
+      <td>{% if group.sample %}{{group.sample.cfu_count}}{% else %}—{% endif %}{% if group.zero_inference %}<br><small>{{group.zero_inference}}</small>{% endif %}</td>
+      <td>{% if group.word_record_id %}record {{group.word_record_id}} · v{{group.word_version}}{% elif group.record_id %}record {{group.record_id}}{% else %}—{% endif %}</td>
+      <td>{{statuses.get(group.status, statuses.other)}}</td>
+      <td>{% if group.reasons %}<ul>{% for reason in group.reasons %}<li>{{reason}}</li>{% endfor %}</ul>{% endif %}
+        {% if group.suggested_fills %}<details><summary>候選補欄 {{group.suggested_fills|length}}</summary><pre>{{group.suggested_fills|tojson(indent=2)}}</pre></details>{% endif %}
+        {% if group.status == 'new' and is_latest %}<form method="post" action="{{url_for('sheet_reconcile_adopt')}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="snapshot_id" value="{{snapshot.id}}"><input type="hidden" name="fingerprint" value="{{group.fingerprint}}"><button class="secondary">新增 draft</button></form>{% endif %}
+      </td>
+      <td><details><summary>{{group.rows|length}} 列 · {{group.species_rows}} 菌鑑子列</summary><pre>{{group.rows|tojson(indent=2)}}</pre></details>
+        <details><summary>欄位來源儲存格</summary><pre>{{group.field_sources|tojson(indent=2)}}</pre></details></td>
+    </tr>
+  {% else %}<tr><td colspan="7">此快照沒有可讀明細。</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+{% endif %}
+{% endblock %}

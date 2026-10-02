@@ -3,6 +3,11 @@
 {% if record.source_id %}<a href="{{url_for('source',source_id=record.source_id)}}">下載保留的來源檔</a><details><summary>來源 SHA-256／擷取原文</summary><code>{{record.sha256}}</code><pre>{{record.source_text}}</pre></details>{% endif %}
 {% if record.warnings %}<div class="notice">{{record.warnings|join('；')}}</div>{% endif %}
 {% if candidates %}<div class="notice">有可能重複的紀錄：{% for r in candidates %}<a href="{{url_for('edit',record_id=r.id)}}">#{{r.id}}</a> {% endfor %}。確認不同採樣才可一起納入。</div>{% endif %}
+<section class="panel" aria-label="業務分析納入狀態"><h2>業務分析範圍</h2>
+{% if record.analysis_included %}<p>目前：<strong>納入分析</strong>。這個旗標只控制環測矩陣、製程矩陣、CRR 與業務月報，不改變 draft／confirmed／void 或原始辨認值。</p>
+<form method="post" action="{{url_for('analysis_inclusion',record_id=record.id)}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="record_version" value="{{record.version}}"><input type="hidden" name="included" value="0"><label for="analysis_reason">排除原因（最多120字，必填）</label><input id="analysis_reason" name="reason" maxlength="120" required placeholder="說明這筆為何不納入業務統計"><button>不納入分析</button></form>
+{% else %}<p>目前：<strong>已排除分析</strong> · 原因：{{record.analysis_exclusion_reason}}。原始資料仍保留；此旗標不改變紀錄核對狀態。</p>
+<form method="post" action="{{url_for('analysis_inclusion',record_id=record.id)}}"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="record_version" value="{{record.version}}"><input type="hidden" name="included" value="1"><label for="analysis_reason">恢復納入原因（最多120字，必填）</label><input id="analysis_reason" name="reason" maxlength="120" required placeholder="說明恢復納入原因"><button>恢復納入分析</button></form>{% endif %}</section>
 <form method="post"><input type="hidden" name="csrf" value="{{session.csrf}}"><input type="hidden" name="record_version" value="{{record.version}}">
 <div class="panel scroll"><table><thead><tr><th>欄位</th><th>匯入時的辨認值（保留）</th><th>目前值／人工核對值</th><th>逐欄核對</th></tr></thead><tbody>
 {% for f in fields %}<tr><th><label for="{{f}}">{{labels[f]}}</label></th><td class="original">{{record.original.get(f,'') or '（空白）'}}</td><td>

@@ -1,0 +1,3 @@
+日期,廠別,監測類型,方法,房間,Grade,點位,操作者,批次,結果,單位,Alert,Action
+2026-06-20,一廠,製程監測,落菌法,C01,A,P-HAND,QA-MVP,PROCESS-06,0,CFU/plate,,
+2026-07-20,一廠,製程監測,落菌法,C01,A,P-HAND,QA-MVP,PROCESS-07,1,CFU/plate,,

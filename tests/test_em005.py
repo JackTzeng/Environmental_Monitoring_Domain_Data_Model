@@ -69,7 +69,7 @@ class EM005ParsingTests(unittest.TestCase):
                 kind, count = _result(raw)
                 self.assertEqual(kind, expected_type)
                 self.assertEqual(count, "")
-        self.assertEqual(PARSER_VERSION, "0.1.4")
+        self.assertEqual(PARSER_VERSION, "0.1.7")
 
     def test_first_factory_rooms_are_exact_and_conflicts_remain_visible(self):
         rooms = ["C01", "C01A", "C02", "C03", "C04", "C05", "C06", "C06D"]

@@ -1,0 +1,4 @@
+日期,廠別,檢測目的,方法,房間,Grade,點位,操作者,批次,結果,單位,Alert,Action,菌種名稱
+2026-07-22,一廠,環測,落菌法,C06D,A,P-MULTISPECIES,QA-MVP,REVIEW-MS,2,CFU/plate,<5,<10,Bacillus atrophaeus; Micrococcus luteus
+2026-07-23,一廠,環測,落菌法,C06D,A,P-LESS,QA-MVP,REVIEW-LT,<1,CFU/plate,<5,<10,
+2026-07-24,一廠,IC,落菌法,C06D,A,P-UNMAPPED,QA-MVP,REVIEW-IC,2,CFU/plate,<5,<10,
